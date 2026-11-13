@@ -23,6 +23,8 @@ export interface PromptSnippet {
   name: string;
   text: string;
   enabled: boolean;
+  /** 来自 ComfyUI 爱丽丝词库的条目 id；同步时据此更新而不是重复添加。手动添加的为空。 */
+  sourceId?: string;
 }
 
 /** 一个 LoRA 开关。 */
@@ -86,6 +88,7 @@ function normalizeSnippet(raw: unknown): PromptSnippet {
     name: str(o.name),
     text: str(o.text),
     enabled: o.enabled !== false,
+    ...(str(o.sourceId) ? { sourceId: str(o.sourceId) } : {}),
   };
 }
 
@@ -311,6 +314,161 @@ export function importExtrasFromWorkflow(workflow: Workflow): ImportedExtras {
     }
   }
   return result;
+}
+
+/* ============ 与爱丽丝词库同步前缀/后缀 ============ */
+
+export interface PromptLibraryEntry {
+  id: string;
+  title: string;
+  text: string;
+  categoryId: string | null;
+  position: number;
+}
+
+export interface PromptLibraryCategory {
+  id: string;
+  name: string;
+}
+
+/** GET /aaalice/prompt-library/snapshot 的有用部分。 */
+export interface PromptLibrarySnapshot {
+  categories: PromptLibraryCategory[];
+  entries: PromptLibraryEntry[];
+}
+
+export function parsePromptLibrary(raw: unknown): PromptLibrarySnapshot {
+  const o = isObject(raw) ? raw : {};
+  const categories = (Array.isArray(o.categories) ? o.categories : [])
+    .filter(isObject)
+    .map(c => ({ id: str(c.id), name: str(c.name) }))
+    .filter(c => c.id);
+  const entries = (Array.isArray(o.entries) ? o.entries : [])
+    .filter(isObject)
+    .map(e => ({
+      id: str(e.id),
+      title: str(e.title),
+      text: str(e.text),
+      categoryId: str(e.categoryId) || null,
+      position: num(e.position, 0),
+    }))
+    .filter(e => e.id);
+  return { categories, entries };
+}
+
+interface Selection {
+  entryId: string;
+  text: string;
+  weight: number;
+}
+
+function selectorSelections(node: JsonObject): Selection[] {
+  const inputs = isObject(node.inputs) ? node.inputs : {};
+  try {
+    const payload = JSON.parse(str(inputs.selection_payload_json, '{}')) as JsonObject;
+    const selections = Array.isArray(payload.selections) ? payload.selections : [];
+    return selections.filter(isObject).map(sel => ({
+      entryId: str(sel.entryId),
+      text: str(sel.text).trim(),
+      weight: num(sel.weight, 1),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/** 与 PromptSelector 同口径：权重 1 原样，否则 (text:w)。 */
+function weightedText(text: string, weight: number): string {
+  if (weight === 1) return text;
+  return `(${text}:${Number(weight.toFixed(2))})`;
+}
+
+type Side = 'prefix' | 'suffix';
+
+function selectorSide(title: string, index: number): Side {
+  if (title.includes('后缀') || /suffix/i.test(title)) return 'suffix';
+  if (title.includes('前缀') || /prefix/i.test(title)) return 'prefix';
+  return index > 0 ? 'suffix' : 'prefix';
+}
+
+function categorySide(name: string): Side | null {
+  if (name.includes('后缀') || /suffix/i.test(name)) return 'suffix';
+  if (name.includes('前缀') || /prefix/i.test(name)) return 'prefix';
+  return null;
+}
+
+export interface SnippetSyncResult {
+  prefixes: PromptSnippet[];
+  suffixes: PromptSnippet[];
+  /** 是否读到了词库（false = 只按工作流里选中的条目同步）。 */
+  fromLibrary: boolean;
+}
+
+/**
+ * 同步前缀/后缀：**替换**而不是追加。
+ * - 有词库：「前缀」「后缀」分类里的全部条目都列出来；工作流里选中的按选中顺序排前面并打开，其余关闭。
+ * - 没词库：只列工作流里选中的条目（打开）。
+ * - 用户手动加的条目（没有 sourceId、内容又不和同步来的重复）保留在末尾；
+ *   旧版导入留下的重复条目按内容去重。
+ */
+export function syncSnippets(
+  workflow: Workflow,
+  library: PromptLibrarySnapshot | null,
+  current: { prefixes: PromptSnippet[]; suffixes: PromptSnippet[] },
+): SnippetSyncResult {
+  const selected: Record<Side, Selection[]> = { prefix: [], suffix: [] };
+  Object.entries(workflow)
+    .filter(([, node]) => isObject(node) && node.class_type === PROMPT_SELECTOR_CLASS)
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .forEach(([, node], index) => {
+      selected[selectorSide(nodeTitle(node), index)].push(...selectorSelections(node));
+    });
+
+  const byId = new Map((library?.entries ?? []).map(e => [e.id, e]));
+  const sideOfCategory = new Map<string, Side>();
+  for (const c of library?.categories ?? []) {
+    const side = categorySide(c.name);
+    if (side) sideOfCategory.set(c.id, side);
+  }
+
+  const build = (side: Side, existing: PromptSnippet[]): PromptSnippet[] => {
+    const oldIds = new Map(existing.filter(s => s.sourceId).map(s => [s.sourceId!, s.id]));
+    const out: PromptSnippet[] = [];
+    const used = new Set<string>();
+    const push = (sourceId: string, name: string, text: string, enabled: boolean) => {
+      const key = sourceId || `text:${text}`;
+      if (!text || used.has(key)) return;
+      used.add(key);
+      out.push({ id: oldIds.get(sourceId) ?? newExtraId(), name: name || snippetName(text), text, enabled, ...(sourceId ? { sourceId } : {}) });
+    };
+    for (const sel of selected[side]) {
+      const entry = byId.get(sel.entryId);
+      const text = (entry?.text ?? sel.text).trim();
+      push(sel.entryId, entry?.title ?? '', weightedText(text, sel.weight), true);
+    }
+    if (library) {
+      library.entries
+        .filter(e => e.categoryId && sideOfCategory.get(e.categoryId) === side)
+        .sort((a, b) => a.position - b.position)
+        .forEach(e => push(e.id, e.title, e.text.trim(), false));
+    }
+    const syncedTexts = new Set(out.flatMap(s => [s.text, s.text.replace(/^\((.*):[\d.]+\)$/s, '$1')]));
+    const seenManual = new Set<string>();
+    for (const s of existing) {
+      if (s.sourceId) continue;
+      const text = s.text.trim();
+      if (syncedTexts.has(text) || seenManual.has(text)) continue;
+      seenManual.add(text);
+      out.push({ ...s });
+    }
+    return out;
+  };
+
+  return {
+    prefixes: build('prefix', current.prefixes),
+    suffixes: build('suffix', current.suffixes),
+    fromLibrary: !!library,
+  };
 }
 
 /* ============ 出图后预览 ============ */

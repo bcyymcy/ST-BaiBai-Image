@@ -8,6 +8,9 @@ import {
   headText,
   importExtrasFromWorkflow,
   newExtraId,
+  parsePromptLibrary,
+  syncSnippets,
+  type PromptLibrarySnapshot,
   tailText,
   type LoraToggle,
   type PromptSnippet,
@@ -32,19 +35,57 @@ function errorMessage(error: unknown): string {
 
 /* ============ 从工作流导入 ============ */
 
-function importFromWorkflow(kind: 'snippets' | 'loras') {
+/** 读 ComfyUI 爱丽丝词库(只读);连不上返回 null,退回只按工作流里选中的同步。 */
+async function fetchPromptLibrary(): Promise<PromptLibrarySnapshot | null> {
+  const base = settings.comfyui.url.trim().replace(/\/+$/, '');
+  if (!base) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(`${base}/aaalice/prompt-library/snapshot`, { signal: controller.signal });
+    if (!response.ok) return null;
+    return parsePromptLibrary(await response.json());
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const syncingSnippets = ref(false);
+
+async function syncSnippetsFromComfy() {
+  if (syncingSnippets.value) return;
+  syncingSnippets.value = true;
+  try {
+    const workflow = parseWorkflowTemplate(active.value.workflow);
+    const library = await fetchPromptLibrary();
+    const result = syncSnippets(workflow, library, extras.value);
+    if (!result.prefixes.length && !result.suffixes.length) {
+      toastr.info('工作流里没找到前缀/后缀词库节点（PromptSelector），也没读到词库', '柏宝绘');
+      return;
+    }
+    extras.value.prefixes = result.prefixes;
+    extras.value.suffixes = result.suffixes;
+    extras.value.snippetsEnabled = true;
+    const on = (list: PromptSnippet[]) => list.filter(s => s.enabled).length;
+    const summary = `前缀 ${result.prefixes.length} 条（开 ${on(result.prefixes)}）、后缀 ${result.suffixes.length} 条（开 ${on(result.suffixes)}）`;
+    if (result.fromLibrary) {
+      toastr.success(`已同步词库：${summary}`, '柏宝绘');
+    } else {
+      toastr.warning(`连不上 ComfyUI 词库，只同步了工作流里选中的：${summary}`, '柏宝绘');
+    }
+  } catch (error) {
+    toastr.error(errorMessage(error), '同步失败');
+  } finally {
+    syncingSnippets.value = false;
+  }
+}
+
+function importFromWorkflow(kind: 'loras') {
   try {
     const imported = importExtrasFromWorkflow(parseWorkflowTemplate(active.value.workflow));
-    if (kind === 'snippets') {
-      if (!imported.prefixes.length && !imported.suffixes.length) {
-        toastr.info('工作流里没找到前缀/后缀词库节点（PromptSelector），或它们没有选中任何条目', '柏宝绘');
-        return;
-      }
-      extras.value.prefixes.push(...imported.prefixes);
-      extras.value.suffixes.push(...imported.suffixes);
-      extras.value.snippetsEnabled = true;
-      toastr.success(`已导入前缀 ${imported.prefixes.length} 条、后缀 ${imported.suffixes.length} 条，并开启接管`, '柏宝绘');
-    } else {
+    {
       if (!imported.loras.length) {
         toastr.info('工作流里没找到 LoRA 管理器节点（Lora Loader (LoraManager)）', '柏宝绘');
         return;
@@ -205,12 +246,18 @@ function time(ts: number): string {
         <input v-model="extras.snippetsEnabled" type="checkbox" class="bbi-checkbox" />
       </label>
       <p class="bbi-field-hint ex-hint">
-        开启后，打开的前缀拼在主提示词前面、后缀拼在后面；工作流里词库节点（PromptSelector）的选择会自动清空，不会重复。
+        开启后，打开的前缀拼在主提示词前面、后缀拼在后面；工作流里词库节点（PromptSelector）的选择会自动清空，不会重复。同步会替换列表（手动添加的条目保留）。
       </p>
       <div class="ex-tools">
-        <button class="bbi-btn bbi-btn-sm" type="button" :disabled="!active.workflow.trim()" @click="importFromWorkflow('snippets')">
+        <button
+          class="bbi-btn bbi-btn-sm"
+          type="button"
+          :disabled="!active.workflow.trim() || syncingSnippets"
+          title="读取电脑 ComfyUI 爱丽丝词库里「前缀」「后缀」分类的全部条目；工作流里选中的打开，其余关闭。重复点只会更新，不会重复添加"
+          @click="syncSnippetsFromComfy"
+        >
           <Icon name="plus" :size="12" />
-          从工作流导入
+          {{ syncingSnippets ? '同步中…' : '从 ComfyUI 同步' }}
         </button>
       </div>
 
