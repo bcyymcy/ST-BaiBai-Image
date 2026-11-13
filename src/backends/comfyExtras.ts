@@ -529,3 +529,37 @@ export function readInputs(workflow: Workflow, refs: [string, string][]): string
     .filter(Boolean)
     .join('\n');
 }
+
+/** 顺着连线取一个输入的文字:字符串直接返回;连线则读上游节点的文字输入(最多追 4 层)。 */
+function resolveText(workflow: Workflow, value: unknown, depth = 0): string {
+  if (typeof value === 'string') return value;
+  if (depth > 4 || !Array.isArray(value) || typeof value[0] !== 'string') return '';
+  const node = workflow[value[0]];
+  if (!isObject(node) || !isObject(node.inputs)) return '';
+  const inputs = node.inputs;
+  for (const key of ['text', 'value', 'string', 'prompt', 'text_g']) {
+    if (key in inputs) {
+      const text = resolveText(workflow, inputs[key], depth + 1);
+      if (text) return text;
+    }
+  }
+  return '';
+}
+
+/**
+ * 找出采样器 negative 口接的编码节点,读它最终的文字(对已替换占位符的工作流调用)。
+ * 负面经过复杂拼接读不到时返回空串。
+ */
+export function readNegativeText(workflow: Workflow): string {
+  const texts = new Set<string>();
+  for (const node of Object.values(workflow)) {
+    if (!isObject(node) || !isObject(node.inputs)) continue;
+    const link = node.inputs.negative;
+    if (!Array.isArray(link) || typeof link[0] !== 'string') continue;
+    const encoder = workflow[link[0]];
+    if (!isObject(encoder) || !isObject(encoder.inputs)) continue;
+    const text = resolveText(workflow, encoder.inputs.text ?? encoder.inputs.prompt);
+    if (text.trim()) texts.add(text.trim());
+  }
+  return [...texts].join('\n');
+}

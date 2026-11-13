@@ -9,6 +9,10 @@ import {
   importExtrasFromWorkflow,
   newExtraId,
   parsePromptLibrary,
+  readNegativeText,
+  applyExtras,
+  cloneExtras,
+  extrasActive,
   syncSnippets,
   type PromptLibrarySnapshot,
   tailText,
@@ -16,7 +20,8 @@ import {
   type PromptSnippet,
 } from '@/backends/comfyExtras';
 import { fetchComfyModelLists } from '@/backends/comfyObjectInfo';
-import { parseWorkflowTemplate } from '@/backends/comfyui';
+import { parseWorkflowTemplate, renderWorkflowTemplate } from '@/backends/comfyui';
+import { cachedTranslation, translatePrompt, type TranslateDirection } from '@/api/translate';
 import BbiCombo from '@/components/BbiCombo.vue';
 import BbiTextarea from '@/components/BbiTextarea.vue';
 import Collapsible from '@/components/Collapsible.vue';
@@ -110,8 +115,81 @@ function importFromWorkflow(kind: 'loras') {
 
 /* ============ 前缀 / 后缀 ============ */
 
+/** 展开中的条目 id(只显示名字,点开才看内容)。不存设置,刷新后全部收起。 */
+const expanded = ref(new Set<string>());
+
+function toggleExpand(id: string) {
+  const next = new Set(expanded.value);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  expanded.value = next;
+}
+
+const allSnippetIds = computed(() => [...extras.value.prefixes, ...extras.value.suffixes].map(s => s.id));
+const allExpanded = computed(
+  () => allSnippetIds.value.length > 0 && allSnippetIds.value.every(id => expanded.value.has(id)),
+);
+
+function toggleAll() {
+  expanded.value = allExpanded.value ? new Set() : new Set(allSnippetIds.value);
+}
+
 function addSnippet(list: PromptSnippet[]) {
-  list.push({ id: newExtraId(), name: '', text: '', enabled: true });
+  const id = newExtraId();
+  list.push({ id, name: '', text: '', enabled: true });
+  expanded.value = new Set([...expanded.value, id]);
+}
+
+/* ============ 翻译(调用「生成 tag 使用」的 API;只给人看,不改发送内容) ============ */
+
+const translating = ref(new Set<string>());
+/** 点过「翻译」的位置;译文在 translate.ts 的缓存里,原文变了就自然失配、不再显示。 */
+const shownTranslations = ref(new Set<string>());
+
+function isTranslating(slot: string): boolean {
+  return translating.value.has(slot);
+}
+
+function translationFor(slot: string, text: string): string {
+  return shownTranslations.value.has(slot) ? cachedTranslation(text) : '';
+}
+
+async function runTranslate(slot: string, text: string, direction: TranslateDirection = 'toZh'): Promise<string> {
+  if (!text.trim() || translating.value.has(slot)) return '';
+  if (direction === 'toZh' && translationFor(slot, text)) {
+    // 再点一次 = 收起译文
+    const next = new Set(shownTranslations.value);
+    next.delete(slot);
+    shownTranslations.value = next;
+    return '';
+  }
+  translating.value = new Set([...translating.value, slot]);
+  try {
+    const result = await translatePrompt(text, direction);
+    if (direction === 'toZh') shownTranslations.value = new Set([...shownTranslations.value, slot]);
+    return result;
+  } catch (error) {
+    toastr.error(errorMessage(error), '翻译失败');
+    return '';
+  } finally {
+    const next = new Set(translating.value);
+    next.delete(slot);
+    translating.value = next;
+  }
+}
+
+/** 中文写的前后缀 → 英文提示词,直接替换内容(名字为空时把中文原文当名字)。 */
+async function snippetToEnglish(item: PromptSnippet) {
+  const source = item.text;
+  const result = await runTranslate(`en:${item.id}`, source, 'toEn');
+  if (!result) return;
+  if (!item.name.trim()) item.name = source.trim().slice(0, 18);
+  item.text = result;
+  toastr.success('已翻成英文并替换内容', '柏宝绘');
+}
+
+function hasChinese(text: string): boolean {
+  return /[\u4e00-\u9fff]/.test(text);
 }
 
 function move<T>(list: T[], index: number, delta: number) {
@@ -229,6 +307,29 @@ const predicted = computed(() => {
   return [headText(extras.value), main, tailText(extras.value)].filter(Boolean).join('\n');
 });
 
+/**
+ * 出图前预计的负面:按插件同样的方式改写工作流、代入最近一张图的 AI 负面词,
+ * 再顺着采样器的 negative 口读出最终文字。
+ */
+const predictedNegative = computed(() => {
+  try {
+    const template = parseWorkflowTemplate(active.value.workflow);
+    if (extrasActive(extras.value)) applyExtras(template, cloneExtras(extras.value));
+    const last = records.find(r => r.kind === 'image');
+    const rendered = renderWorkflowTemplate(template, {
+      prompt: '',
+      nl: '',
+      negative_prompt: last && last.kind === 'image' ? last.negative : '',
+      seed: 0,
+      width: 832,
+      height: 1216,
+    });
+    return readNegativeText(rendered).replace(/(,\s*)+$/, '');
+  } catch {
+    return '';
+  }
+});
+
 const triggersText = computed(() => activeTriggers(extras.value));
 
 const actual = computed(() => lastActual.value);
@@ -259,11 +360,14 @@ function time(ts: number): string {
           <Icon name="plus" :size="12" />
           {{ syncingSnippets ? '同步中…' : '从 ComfyUI 同步' }}
         </button>
+        <button v-if="allSnippetIds.length" class="bbi-btn bbi-btn-sm" type="button" @click="toggleAll">
+          {{ allExpanded ? '全部收起' : '全部展开' }}
+        </button>
       </div>
 
       <section v-for="group in ([['前缀', extras.prefixes], ['后缀', extras.suffixes]] as const)" :key="group[0]" class="ex-group">
         <div class="ex-group-head">
-          <span class="bbi-field-label">{{ group[0] }}</span>
+          <span class="bbi-field-label">{{ group[0] }}（开 {{ group[1].filter(s => s.enabled).length }} / 共 {{ group[1].length }}）</span>
           <button class="bbi-icon-btn ex-op" type="button" :title="`添加${group[0]}`" @click="addSnippet(group[1])">
             <Icon name="plus" :size="14" />
           </button>
@@ -272,14 +376,47 @@ function time(ts: number): string {
         <div v-for="(item, index) in group[1]" :key="item.id" class="ex-snippet">
           <div class="ex-snippet-head">
             <input v-model="item.enabled" type="checkbox" class="bbi-checkbox" :title="item.enabled ? '已开启' : '已关闭'" />
-            <input v-model="item.name" class="bbi-input ex-name" type="text" placeholder="名字" />
+            <button
+              class="ex-name-btn"
+              :class="{ 'is-off': !item.enabled }"
+              type="button"
+              :title="expanded.has(item.id) ? '收起' : item.text"
+              @click="toggleExpand(item.id)"
+            >
+              <span class="ex-caret">{{ expanded.has(item.id) ? '▾' : '▸' }}</span>
+              <span class="ex-name-text">{{ item.name || item.text || '（未命名）' }}</span>
+            </button>
             <button class="bbi-icon-btn ex-op" type="button" title="上移" :disabled="index === 0" @click="move(group[1], index, -1)">↑</button>
             <button class="bbi-icon-btn ex-op" type="button" title="下移" :disabled="index === group[1].length - 1" @click="move(group[1], index, 1)">↓</button>
             <button class="bbi-icon-btn ex-op ex-remove" type="button" title="删除" @click="remove(group[1], index)">
               <Icon name="trash" :size="14" />
             </button>
           </div>
-          <BbiTextarea v-model="item.text" :rows="2" :max-rows="6" placeholder="内容，例如 masterpiece, best quality" />
+          <div v-if="expanded.has(item.id)" class="ex-snippet-body">
+            <input v-model="item.name" class="bbi-input" type="text" placeholder="名字（只用于显示）" />
+            <BbiTextarea v-model="item.text" :rows="2" :max-rows="6" placeholder="内容，例如 masterpiece, best quality；也可以写中文再点「翻成英文」" />
+            <div class="ex-tools ex-tools-tight">
+              <button
+                class="bbi-btn bbi-btn-sm"
+                type="button"
+                :disabled="!item.text.trim() || isTranslating(`zh:${item.id}`)"
+                @click="runTranslate(`zh:${item.id}`, item.text)"
+              >
+                {{ isTranslating(`zh:${item.id}`) ? '翻译中…' : translationFor(`zh:${item.id}`, item.text) ? '收起译文' : '译成中文' }}
+              </button>
+              <button
+                v-if="hasChinese(item.text)"
+                class="bbi-btn bbi-btn-sm"
+                type="button"
+                :disabled="isTranslating(`en:${item.id}`)"
+                title="把中文描述翻成英文提示词，替换内容"
+                @click="snippetToEnglish(item)"
+              >
+                {{ isTranslating(`en:${item.id}`) ? '翻译中…' : '翻成英文' }}
+              </button>
+            </div>
+            <p v-if="translationFor(`zh:${item.id}`, item.text)" class="ex-translation">{{ translationFor(`zh:${item.id}`, item.text) }}</p>
+          </div>
         </div>
       </section>
     </Collapsible>
@@ -357,10 +494,27 @@ function time(ts: number): string {
     <Collapsible title="工作流预览" :open="false">
       <section class="ex-group">
         <div class="ex-group-head">
-          <span class="bbi-field-label">出图前预计（插件拼接部分）</span>
-          <button class="bbi-btn bbi-btn-sm" type="button" @click="copyText(predicted, '已复制')">复制</button>
+          <span class="bbi-field-label">出图前预计 · 正向</span>
+          <span class="ex-btns">
+            <button class="bbi-btn bbi-btn-sm" type="button" :disabled="isTranslating('pred-pos')" @click="runTranslate('pred-pos', predicted)">
+              {{ isTranslating('pred-pos') ? '翻译中…' : translationFor('pred-pos', predicted) ? '收起译文' : '翻译' }}
+            </button>
+            <button class="bbi-btn bbi-btn-sm" type="button" @click="copyText(predicted, '已复制')">复制</button>
+          </span>
         </div>
         <pre class="ex-pre">{{ predicted }}</pre>
+        <p v-if="translationFor('pred-pos', predicted)" class="ex-translation">{{ translationFor('pred-pos', predicted) }}</p>
+        <div class="ex-group-head ex-sub-head">
+          <span class="bbi-field-label">出图前预计 · 负面</span>
+          <span v-if="predictedNegative" class="ex-btns">
+            <button class="bbi-btn bbi-btn-sm" type="button" :disabled="isTranslating('pred-neg')" @click="runTranslate('pred-neg', predictedNegative)">
+              {{ isTranslating('pred-neg') ? '翻译中…' : translationFor('pred-neg', predictedNegative) ? '收起译文' : '翻译' }}
+            </button>
+            <button class="bbi-btn bbi-btn-sm" type="button" @click="copyText(predictedNegative, '已复制')">复制</button>
+          </span>
+        </div>
+        <pre class="ex-pre">{{ predictedNegative || '（没读到：负面那一路可能经过了拼接节点，以出图后的实际值为准）' }}</pre>
+        <p v-if="translationFor('pred-neg', predictedNegative)" class="ex-translation">{{ translationFor('pred-neg', predictedNegative) }}</p>
         <p class="bbi-field-hint">
           主提示词用最近一张图的 AI 输出代入。工作流里如果还有别的固定文字（例如没交给插件管的前缀节点），以出图后的实际值为准。
         </p>
@@ -378,9 +532,15 @@ function time(ts: number): string {
           <div v-for="output in actual.outputs" :key="output.nodeId" class="ex-actual">
             <div class="ex-group-head">
               <span class="ex-label">ComfyUI 回传 · {{ output.title }}</span>
-              <button class="bbi-btn bbi-btn-sm" type="button" @click="copyText(output.text, '已复制')">复制</button>
+              <span class="ex-btns">
+            <button class="bbi-btn bbi-btn-sm" type="button" :disabled="isTranslating(`out:${output.nodeId}`)" @click="runTranslate(`out:${output.nodeId}`, output.text)">
+              {{ isTranslating(`out:${output.nodeId}`) ? '翻译中…' : translationFor(`out:${output.nodeId}`, output.text) ? '收起译文' : '翻译' }}
+            </button>
+            <button class="bbi-btn bbi-btn-sm" type="button" @click="copyText(output.text, '已复制')">复制</button>
+          </span>
             </div>
             <pre class="ex-pre">{{ output.text }}</pre>
+            <p v-if="translationFor(`out:${output.nodeId}`, output.text)" class="ex-translation">{{ translationFor(`out:${output.nodeId}`, output.text) }}</p>
           </div>
           <p v-if="!actual.outputs.length" class="bbi-field-hint">
             ComfyUI 没回传文本。想看最终全文，在工作流里把最终提示词接一个「预览任意」(PreviewAny) 节点。
@@ -388,16 +548,28 @@ function time(ts: number): string {
           <div class="ex-actual">
             <div class="ex-group-head">
               <span class="ex-label">发送的正向输入</span>
-              <button class="bbi-btn bbi-btn-sm" type="button" @click="copyText(actual.sentPositive, '已复制')">复制</button>
+              <span v-if="actual.sentPositive" class="ex-btns">
+            <button class="bbi-btn bbi-btn-sm" type="button" :disabled="isTranslating('act-pos')" @click="runTranslate('act-pos', actual.sentPositive)">
+              {{ isTranslating('act-pos') ? '翻译中…' : translationFor('act-pos', actual.sentPositive) ? '收起译文' : '翻译' }}
+            </button>
+            <button class="bbi-btn bbi-btn-sm" type="button" @click="copyText(actual.sentPositive, '已复制')">复制</button>
+          </span>
             </div>
             <pre class="ex-pre">{{ actual.sentPositive || '（空）' }}</pre>
+            <p v-if="translationFor('act-pos', actual.sentPositive)" class="ex-translation">{{ translationFor('act-pos', actual.sentPositive) }}</p>
           </div>
           <div class="ex-actual">
             <div class="ex-group-head">
               <span class="ex-label">发送的负面输入</span>
-              <button v-if="actual.sentNegative" class="bbi-btn bbi-btn-sm" type="button" @click="copyText(actual.sentNegative, '已复制')">复制</button>
+              <span v-if="actual.sentNegative" class="ex-btns">
+            <button class="bbi-btn bbi-btn-sm" type="button" :disabled="isTranslating('act-neg')" @click="runTranslate('act-neg', actual.sentNegative)">
+              {{ isTranslating('act-neg') ? '翻译中…' : translationFor('act-neg', actual.sentNegative) ? '收起译文' : '翻译' }}
+            </button>
+            <button class="bbi-btn bbi-btn-sm" type="button" @click="copyText(actual.sentNegative, '已复制')">复制</button>
+          </span>
             </div>
             <pre class="ex-pre">{{ actual.sentNegative || '（工作流没有 %negative_prompt%，负面词全是工作流里写死的）' }}</pre>
+            <p v-if="translationFor('act-neg', actual.sentNegative)" class="ex-translation">{{ translationFor('act-neg', actual.sentNegative) }}</p>
           </div>
         </template>
       </section>
@@ -512,6 +684,57 @@ function time(ts: number): string {
 .ex-op:disabled {
   opacity: 0.4;
   cursor: default;
+}
+.ex-snippet-body {
+  display: grid;
+  gap: 6px;
+  padding: 2px 0 6px 28px;
+}
+.ex-name-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 2px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.ex-name-btn.is-off {
+  color: var(--bbi-ink-soft);
+}
+.ex-caret {
+  flex: none;
+  width: 12px;
+  color: var(--bbi-ink-soft);
+}
+.ex-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ex-tools-tight {
+  padding: 0;
+}
+.ex-btns {
+  display: inline-flex;
+  gap: 6px;
+}
+.ex-sub-head {
+  margin-top: 10px;
+}
+.ex-translation {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  color: var(--bbi-ink-soft);
+  border-left: 2px solid var(--bbi-line);
 }
 .ex-remove:not(:disabled) {
   color: var(--bbi-danger);

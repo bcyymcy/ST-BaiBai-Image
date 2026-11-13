@@ -8,6 +8,7 @@ import {
   locatePromptInputs,
   normalizeExtras,
   readInputs,
+  readNegativeText,
   syncSnippets,
 } from '@/backends/comfyExtras';
 import { renderWorkflowTemplate, type ComfyWorkflow } from '@/backends/comfyui';
@@ -118,5 +119,15 @@ describe('syncSnippets', () => {
     expect(r.prefixes.every(s => s.enabled)).toBe(true);
     expect(r.prefixes.length).toBe(2);
     expect(r.fromLibrary).toBe(false);
+  });
+});
+
+describe('readNegativeText', () => {
+  it('顺着采样器 negative 口读出最终负面词', () => {
+    const rendered = renderWorkflowTemplate(load(), { prompt: '', nl: '', negative_prompt: 'AI_NEG', seed: 0, width: 832, height: 1216 });
+    const text = readNegativeText(rendered);
+    expect(text).toContain('shiny hair');
+    expect(text.endsWith('AI_NEG')).toBe(true);
+    expect(text).not.toContain('%negative_prompt%');
   });
 });
