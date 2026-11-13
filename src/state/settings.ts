@@ -1,3 +1,4 @@
+import { extrasDefaults, normalizeExtras, type ComfyExtras } from '@/backends/comfyExtras';
 import {
   normalizeSimpleConfig,
   simpleDefaults,
@@ -80,6 +81,8 @@ export interface ComfyWorkflowPreset extends SizePair {
   naturalLanguage: boolean;
   /** 画幅锁:auto = 由自动 tag 判定横竖;portrait/landscape = 这套工作流一律出该方向(见 size.ts)。 */
   orientationLock: OrientationLock;
+  /** 【bcy】插件侧接管的前后缀与 LoRA 开关(仅自定义工作流生效)。 */
+  extras: ComfyExtras;
 }
 
 /**
@@ -93,6 +96,8 @@ export interface ComfyRunConn extends SizePair {
   workflow: string;
   mode: ComfyPresetMode;
   simple: ComfySimpleConfig;
+  /** 【bcy】见 ComfyWorkflowPreset.extras;缺省 = 不改写工作流。 */
+  extras?: ComfyExtras;
 }
 
 /** ComfyUI 连接与工作流库。 */
@@ -1091,6 +1096,7 @@ export function newComfyWorkflow(name = DEFAULT_WORKFLOW_NAME): ComfyWorkflowPre
     portraitSize: DEFAULT_PORTRAIT_SIZE,
     landscapeSize: DEFAULT_LANDSCAPE_SIZE,
     orientationLock: 'auto',
+    extras: extrasDefaults(),
   };
 }
 
@@ -1305,6 +1311,7 @@ export function effectiveComfyConn(): ComfyRunConn {
     simple: preset.simple,
     portraitSize: preset.portraitSize,
     landscapeSize: preset.landscapeSize,
+    extras: preset.extras,
   };
 }
 
@@ -1401,6 +1408,7 @@ function normalizeWorkflowPreset(raw: unknown, seq: number): ComfyWorkflowPreset
     portraitSize: size(o.portraitSize, DEFAULT_PORTRAIT_SIZE),
     landscapeSize: size(o.landscapeSize, DEFAULT_LANDSCAPE_SIZE),
     orientationLock: normalizeOrientationLock(o.orientationLock),
+    extras: normalizeExtras(o.extras),
   };
 }
 

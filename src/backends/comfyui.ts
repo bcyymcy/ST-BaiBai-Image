@@ -1,6 +1,14 @@
 import { buildSimpleWorkflow } from '@/backends/comfyTemplates';
 import { parseSize, pickSize, type Orientation } from '@/backends/size';
 import { getContext } from '@/st/context';
+import {
+  applyExtras,
+  extractTextOutputs,
+  extrasActive,
+  locatePromptInputs,
+  readInputs,
+  type ComfyTextOutput,
+} from '@/backends/comfyExtras';
 import { type ComfyRunConn } from '@/state/settings';
 
 type JsonObject = Record<string, unknown>;
@@ -25,6 +33,18 @@ export interface ComfyImageResult {
   format: string;
   /** 浏览器直连使用 object URL 时释放资源；data URL 无需释放。 */
   revoke(): void;
+  /** 【bcy】工作流预览：实际发出去的提示词与 ComfyUI 回传的文本输出（仅自定义工作流）。 */
+  preview?: ComfyRunPreview;
+}
+
+/** 【bcy】一次出图实际用到的提示词。 */
+export interface ComfyRunPreview {
+  /** 填好占位符、拼好前后缀/触发词后，含 %prompt%/%nl% 的输入里的文本。 */
+  sentPositive: string;
+  /** 含 %negative_prompt% 的输入里的文本（没有该占位符时为空）。 */
+  sentNegative: string;
+  /** ComfyUI 执行后各文本预览节点（PreviewAny 等）的输出——这才是最终送进编码器的全文。 */
+  outputs: ComfyTextOutput[];
 }
 
 const SUPPORTED_PLACEHOLDERS = new Set(['prompt', 'negative_prompt', 'seed', 'nl', 'width', 'height']);
@@ -125,8 +145,8 @@ function replacePlaceholders(value: unknown, replacements: Record<string, string
  * 画幅是 opt-in 的：工作流没写 %width%/%height% 时完全不受影响，尺寸仍由工作流自己决定；
  * 写了却拿不到有效尺寸才报错，提示去面板补配置——静默按默认值出图会让用户以为设置生效了。
  */
-export function renderWorkflowTemplate(template: string, values: ComfyTemplateValues): ComfyWorkflow {
-  const workflow = parseWorkflowTemplate(template);
+export function renderWorkflowTemplate(template: string | ComfyWorkflow, values: ComfyTemplateValues): ComfyWorkflow {
+  const workflow = typeof template === 'string' ? parseWorkflowTemplate(template) : template;
   const found = new Set<string>();
   collectPlaceholders(workflow, found);
 
@@ -432,6 +452,7 @@ async function pollDirectResult(
   try {
     const startedAt = Date.now();
     let file: ComfyOutputFile | null = null;
+    let lastItem: unknown = null;
     // 一旦观察到自己在执行就不再查队列:位置信息已无意义,省掉每轮一次请求
     let watchQueue = !!hooks?.onQueue;
     while (!file) {
@@ -440,6 +461,7 @@ async function pollDirectResult(
       if (!historyResponse.ok) throw await responseError(historyResponse, '读取 ComfyUI 任务状态失败');
       const history = (await historyResponse.json()) as JsonObject;
       const item = history[promptId];
+      lastItem = item;
       const error = executionError(item);
       if (error) throw new ComfyUIError(error);
       file = findOutputFile(item);
@@ -469,7 +491,8 @@ async function pollDirectResult(
       filename: file.filename,
       format: fileFormat(file.filename, blob.type),
       revoke: () => URL.revokeObjectURL(url),
-    };
+      textItem: lastItem,
+    } as ComfyImageResult & { textItem?: unknown };
   } finally {
     signal?.removeEventListener('abort', onAbort);
   }
@@ -491,6 +514,7 @@ export async function generateComfyImage(
   // 两模式互斥的分叉点:simple 由模板组装(无占位符),custom 走宏渲染。
   // 汇合点即「拿到可提交 JSON」,之后的排队/轮询/取消完全共用。
   let workflow: ComfyWorkflow;
+  let refs: ReturnType<typeof locatePromptInputs> | null = null;
   if (conn.mode === 'simple') {
     try {
       workflow = buildSimpleWorkflow(conn.simple, {
@@ -505,8 +529,23 @@ export async function generateComfyImage(
       throw new ComfyUIError(error instanceof Error ? error.message : String(error));
     }
   } else {
-    workflow = renderWorkflowTemplate(conn.workflow, { ...values, ...size });
+    // 【bcy】插件侧接管前后缀/LoRA：在替换占位符之前改写（要靠 %prompt% 定位主提示词输入）
+    const template = parseWorkflowTemplate(conn.workflow);
+    if (extrasActive(conn.extras)) applyExtras(template, conn.extras);
+    refs = locatePromptInputs(template);
+    workflow = renderWorkflowTemplate(template, { ...values, ...size });
   }
+  const attachPreview = (result: ComfyImageResult & { textItem?: unknown }): ComfyImageResult => {
+    if (refs) {
+      result.preview = {
+        sentPositive: readInputs(workflow, refs.positive),
+        sentNegative: readInputs(workflow, refs.negative),
+        outputs: extractTextOutputs(result.textItem, workflow),
+      };
+    }
+    delete result.textItem;
+    return result;
+  };
 
   // 通道自动选择:浏览器直连优先;仅当请求根本没送达 ComfyUI(网络级失败)时回退 ST 后端转发。
   // 回退只发生在「排队」之前——拿到 prompt_id 后任务已入队,轮询阶段的任何失败都不重发,避免重复生图。
@@ -514,9 +553,9 @@ export async function generateComfyImage(
   try {
     const promptId = await queueDirect(conn, workflow, signal);
     queued = true;
-    return await pollDirectResult(conn, promptId, signal, hooks);
+    return attachPreview(await pollDirectResult(conn, promptId, signal, hooks));
   } catch (error) {
     if (queued || signal?.aborted || !isNetworkError(error)) throw error;
-    return generateViaServer(conn, workflow, signal);
+    return attachPreview(await generateViaServer(conn, workflow, signal));
   }
 }

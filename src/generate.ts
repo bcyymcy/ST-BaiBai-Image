@@ -240,8 +240,11 @@ export async function generateImage(
         width,
         height,
         // custom 模式的提示词由工作流里的占位符决定，无法在这里拼出全文，留空。
-        positive: conn.mode === 'simple' ? composePositive(conn.simple, simpleValues) : '',
-        negative: conn.mode === 'simple' ? composeNegative(conn.simple, simpleValues) : '',
+        // 【bcy】custom 模式:优先取 ComfyUI 回传的最终文本(预览节点),否则取发出去的主提示词输入
+        positive: conn.mode === 'simple'
+          ? composePositive(conn.simple, simpleValues)
+          : (result.preview?.outputs[0]?.text || result.preview?.sentPositive || ''),
+        negative: conn.mode === 'simple' ? composeNegative(conn.simple, simpleValues) : (result.preview?.sentNegative ?? ''),
         artist: null,
         vibes: [],
         params: conn.mode === 'simple' ? comfySimpleParams(conn.simple) : { mode: 'custom' },

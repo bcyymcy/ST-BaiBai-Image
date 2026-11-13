@@ -36,7 +36,7 @@ import {
 import { isTagPlanning } from '@/floor/tagPlanState';
 import { formatGenerationMeta } from '@/generationMeta';
 import { activeComfyPreset, activeOrientationLock, imageDisplayMaxHeight, settings } from '@/state/settings';
-import { beginImage, failImage, finishImage, safeHistory } from '@/state/history';
+import { beginImage, failImage, finishImage, safeHistory, setImageActual } from '@/state/history';
 import { copyText } from '@/st/clipboard';
 import { getContext } from '@/st/context';
 import { formatPromptText } from '@/st/imageTagRegex';
@@ -318,6 +318,7 @@ async function generate(): Promise<void> {
     await saveImageResult(job.messageId, job.swipeId, job.seq, job.tag, seed, result, meta);
     result.revoke();
     if (historyId !== null) safeHistory(() => finishImage(historyId!));
+    safeHistory(() => setImageActual(historyId, result.preview));
     // 先清运行态再重水合:重水合会重建本组件,清完才不会带着 generating 复活
     clearGen(slot, token);
     const ctx = getContext();

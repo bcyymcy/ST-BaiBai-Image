@@ -105,6 +105,14 @@ function segments(record: HistoryRecord): Segment[] {
     });
   }
   if (record.negative) out.push({ label: '负面', text: record.negative });
+  // 【bcy】工作流预览:实际发给 ComfyUI 的文本 + ComfyUI 回传的最终提示词
+  if (record.actual) {
+    for (const output of record.actual.outputs) {
+      out.push({ label: `实际·${output.title}`, text: output.text });
+    }
+    if (record.actual.sentPositive) out.push({ label: '实际·发送的正向输入', text: record.actual.sentPositive });
+    if (record.actual.sentNegative) out.push({ label: '实际·发送的负面输入', text: record.actual.sentNegative });
+  }
   return out;
 }
 

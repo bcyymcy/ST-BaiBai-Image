@@ -82,6 +82,15 @@ export interface ImageRecord extends BaseRecord {
   /** 楼层坐标:详情里据此指回是哪一楼哪个槽位。图片本身不存(见文件头)。 */
   floor: number;
   seq: number;
+  /** 【bcy】工作流预览:实际发出去/ComfyUI 回传的提示词(仅 ComfyUI 自定义工作流)。 */
+  actual?: ImageActual;
+}
+
+/** 【bcy】一次出图实际使用的提示词。 */
+export interface ImageActual {
+  sentPositive: string;
+  sentNegative: string;
+  outputs: { nodeId: string; title: string; text: string }[];
 }
 
 export type HistoryRecord = LlmRecord | ImageRecord;
@@ -268,6 +277,28 @@ export function finishImage(id: number): void {
   if (record?.kind !== 'image') return;
   record.status = 'ok';
   record.durationMs = Date.now() - record.startedAt;
+}
+
+/** 【bcy】最近一次出图的实际提示词(工作流预览面板用);刷新即清空。 */
+export const lastActual = reactive<{ value: (ImageActual & { at: number; seed: number; model: string; floor: number }) | null }>({ value: null });
+
+/** 【bcy】出图成功后记下实际提示词。 */
+export function setImageActual(id: number | null, actual: ImageActual | undefined): void {
+  if (!actual) return;
+  const clipped: ImageActual = {
+    sentPositive: truncate(actual.sentPositive),
+    sentNegative: truncate(actual.sentNegative),
+    outputs: actual.outputs.map(o => ({ ...o, text: truncate(o.text) })),
+  };
+  const record = id === null ? undefined : find(id);
+  if (record?.kind === 'image') record.actual = clipped;
+  lastActual.value = {
+    ...clipped,
+    at: Date.now(),
+    seed: record?.kind === 'image' ? record.seed : 0,
+    model: record?.kind === 'image' ? record.model : '',
+    floor: record?.kind === 'image' ? record.floor : -1,
+  };
 }
 
 export function failImage(id: number, message: string, aborted = false): void {

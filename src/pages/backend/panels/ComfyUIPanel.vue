@@ -14,11 +14,13 @@ import {
   type ComfyModelLists,
 } from '@/backends/comfyObjectInfo';
 import { getWorkflowPlaceholders, testComfyConnection } from '@/backends/comfyui';
+import { cloneExtras } from '@/backends/comfyExtras';
 import {
   configureWorkflowWithAi,
   type WorkflowAssistResult,
   type WorkflowBindingPurpose,
 } from '@/backends/comfyWorkflowAssistant';
+import ComfyExtrasPanel from '@/pages/backend/panels/ComfyExtrasPanel.vue';
 import BbiCombo from '@/components/BbiCombo.vue';
 import BbiSelect from '@/components/BbiSelect.vue';
 import BbiTextarea from '@/components/BbiTextarea.vue';
@@ -108,6 +110,7 @@ function duplicateWorkflow() {
       ...active.value.simple,
       loras: active.value.simple.loras.map(lora => ({ ...lora })),
     },
+    extras: cloneExtras(active.value.extras),
   };
   settings.comfyui.workflows.push(preset);
   switchTo(preset);
@@ -745,6 +748,7 @@ function applyAssist() {
         </p>
         </template>
       </Collapsible>
+      <ComfyExtrasPanel />
     </div>
 
     <ConfirmDialog
