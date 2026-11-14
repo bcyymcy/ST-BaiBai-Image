@@ -19,13 +19,14 @@ tag（JSON 的 tag 键）：只是给插件内部记录用的一行短标签，*
 nl（JSON 的 nl 键）：一段 120~200 个英文单词的连贯描述（多人同框最多 230 词）。
 ⚠ 模型最看重开头：先定的构图会压过后面的细节。细节写得越多、方位越杂，模型越容易顾此失彼，退回它熟悉的常见姿势。所以**姿势先行、外貌压缩、细节克制**，严格按下面顺序：
   1. 第一句 = 核心画面：景别 + 人数 + 场所 + **整体姿势/体位**，一句说清谁在哪、身体朝哪、怎么接触。
-     例：A cowboy shot of two people on a bed: the girl lies on her back with her knees raised and apart while the young man kneels between her legs and leans over her, seen from above.
+     例：A cowboy shot of two people on a bed: the girl lies on her back with her knees raised and apart while the young man kneels between her legs and leans over her.
      有固定叫法的姿势/体位直接用叫法（lying on her back, kneeling, sitting on his lap, straddling him, missionary position, from behind, side by side 等），再用一句白话补足方位。
   2. 外貌：每个入画角色一句（照抄角色库，规则见「角色外貌」），用来区分人物，不展开。
   3. 动作细节：只补 1~2 个最关键的接触点或手部动作（如 his hands hold her waist），必须与第一句的姿势一致；不逐个交代头、肩、每根手指、每条腿。
   4. 表情：主角一句（眼神、脸红、泪水等），其他人最多半句。
   5. 服装：一句，写主要衣物和关键状态（敞开、褪下、湿透），不逐件描写褶皱。
   6. 光影与背景：合起来一句。
+- **镜头角度只写一次**：景别后最多跟一个角度（from above / from the side / at eye level 等），全段不再出现第二个角度说法（high three-quarter angle 和 seen from above 同时出现就会打架）。
 - **方位只用一套说法**：选定一个视角和一种位置关系后全段保持一致；同一个人不要同时出现「在上方」「在身后」「在旁边」这类互相冲突的描述。不确定的方位干脆不写。
 - 姿势要选模型画得出的、常见清晰的版本；正文动作复杂时，挑最能代表这一刻的一个姿势画，别把连续动作塞进一张图。
 - 多人同框时，第一次提到每个人就用外貌区分他（the girl with long black hair、the tall man），之后一直用这个称谓，不用 she/he/they 跨句指代。
@@ -36,6 +37,7 @@ nl（JSON 的 nl 键）：一段 120~200 个英文单词的连贯描述（多人
 
 角色外貌（决定同一个角色每张图长得一样）：
 - 角色在【角色固定外貌库】里有 nl=（自然语言外貌）时，把这句外貌描述**原样**写进 nl，用词一字不改，只允许把开头的 A girl / A young man 换成 The girl / The young man 接上下文。
+  例外：库里的句子若带有「没有某特征」的否定说法（no scars or marks are noted）或 main features / notable 这类说明腔，删掉这些部分，只留看得见的外貌。
 - 只有 tag 字段、没有 nl= 时，把库里的字段改写成一句简短英文外貌描述，颜色、长度、发型、瞳色都必须写到，不得换颜色（long black hair 就写 long black hair）。
 - 一个人的外貌在一张图里只写这一句，之后用简短的区分性称谓承接。
 - 角色库里的 fandom（同人身份）字段：nl 里直接写角色英文名和作品名即可（如 Kasumi from Blue Archive）。原创角色不写作品名。
