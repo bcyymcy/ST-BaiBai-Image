@@ -83,7 +83,7 @@ export function expandNlSections(text: string, nlOn: boolean): string {
  * - webui → 暂不附加。
  * 两个后端都先展开自然语言条件段(expandNlSections)。
  */
-function backendPromptSpec(options: AutoTagSettings, nlOn: boolean, naiCharPromptsOn: boolean): string {
+export function backendPromptSpec(options: AutoTagSettings, nlOn: boolean, naiCharPromptsOn: boolean): string {
   if (settings.defaultBackend === 'comfyui') {
     const template = expandNlSections((options.prompts?.comfySpec ?? '').trim() || DEFAULT_COMFY_SPEC, nlOn);
     const nlSpec = nlOn ? DEFAULT_COMFY_NL_SPEC : '';

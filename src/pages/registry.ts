@@ -1,6 +1,7 @@
 import type { Component } from 'vue';
 import Backend from './backend/index.vue';
 import Characters from './characters/index.vue';
+import FreeGen from './freegen/index.vue';
 import Gallery from './gallery/index.vue';
 import History from './history/index.vue';
 import Settings from './settings/index.vue';
@@ -20,6 +21,7 @@ export interface PageDef {
 export const PAGES: PageDef[] = [
   { id: 'backend', label: '渠道', component: Backend },
   { id: 'characters', label: '角色管理', component: Characters },
+  { id: 'freegen', label: '自由生图', component: FreeGen },
   { id: 'gallery', label: '图库', component: Gallery },
   { id: 'history', label: '请求历史', component: History },
   { id: 'settings', label: '设置', component: Settings },

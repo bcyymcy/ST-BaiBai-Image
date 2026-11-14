@@ -64,7 +64,8 @@ function statusLabel(record: HistoryRecord): string {
 }
 
 function title(record: HistoryRecord): string {
-  return record.kind === 'llm' ? record.source : `第 ${record.floor} 楼 · 第 ${record.seq + 1} 张`;
+  if (record.kind === 'llm') return record.source;
+  return record.floor < 0 ? `自由生图 · 第 ${record.seq + 1} 张` : `第 ${record.floor} 楼 · 第 ${record.seq + 1} 张`;
 }
 
 function subtitle(record: HistoryRecord): string {

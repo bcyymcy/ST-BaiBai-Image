@@ -114,6 +114,10 @@ function jsonObjects(raw: string): string[] {
   return candidates;
 }
 
+export function parseJsonObject(raw: string): Record<string, unknown> {
+  return parseObject(raw);
+}
+
 function parseObject(raw: string): Record<string, unknown> {
   for (const candidate of jsonObjects(raw)) {
     try {
