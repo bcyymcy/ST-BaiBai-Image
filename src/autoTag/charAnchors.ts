@@ -165,15 +165,25 @@ export async function generateCharTags(
 
 /* ============ 【bcy】字段 / 中文外貌 → 英文自然语言外貌 ============ */
 
-const NL_CONVERT_SPEC = `你是角色外貌描述员。为每个角色写一句英文自然语言外貌描述，供 MOSS 等能读懂完整句子的生图模型使用；之后每张图都会原样照抄这一句，所以必须准确、完整、可复用。
+// 规范整段用英文写:输入里有中文外貌描述(柏宝书),中文指令 + 中文素材时
+// 不少模型会顺手用中文作答,实测出现过整句中文外貌。
+const NL_CONVERT_SPEC = `You write character appearance sentences for an AI image model (MOSS-Image) that reads full English sentences. Every future image prompt will copy your sentence verbatim, so it must be accurate, complete and reusable.
 
-要求：
-1. 一句话（最多两句），30~60 个英文单词，以 "A girl" / "A young woman" / "A young man" / "A boy" 等性别与年龄感开头。
-2. 只写固定外貌：发色、发型与长度、刘海、瞳色、体型与身高感、胸部大小（女性有记录时）、标志特征（异色瞳、伤疤、尖耳、角、尾巴等）。
-3. 不写服装、饰品、表情、动作、场景、性格；不写白皙肤色（pale/fair/white skin），只有明显晒黑或深肤色才写。
-4. 给出的 tag 字段每一项都必须写进去，颜色、长度不得改动或省略（long black hair 就写 long black hair）；中文外貌描述里提到的固定特征也要写进去。没有依据的细节不要编。
-5. 有作品名（fandom）时写成 "Kasumi from Blue Archive, a girl with ..." 的形式。
-6. 只返回一个 JSON 对象：{"角色名":"A girl with ..."}，键与输入的角色名完全一致；不要 Markdown 代码块、不要解释。`;
+OUTPUT LANGUAGE: ENGLISH ONLY. The input may contain Chinese appearance notes — translate them. Never output Chinese (the only exception: the character's own name may stay as written).
+
+Rules:
+1. One sentence (two at most), 30-60 English words, starting with gender and apparent age, e.g. "A girl", "A young woman", "A young man", "A boy".
+2. Only permanent appearance: hair color, hairstyle and length, bangs, eye color, build and height, breast size (for women, if recorded), distinctive features (heterochromia, scars, pointed ears, horns, tail, etc.).
+3. Do NOT write clothing, accessories, expression, pose, location or personality. Do not write pale/fair/white skin; only mention skin if clearly tanned or dark.
+4. Every given tag field must appear, with its colors and lengths unchanged (long black hair stays "long black hair"). Also include permanent features from the Chinese notes. Do not invent details.
+5. If a fandom (source work) is given, write it as "Kasumi from Blue Archive, a girl with ...".
+6. Return ONLY one JSON object: {"<character name>": "A girl with ..."}. Keys must match the input names exactly. No Markdown code block, no explanation.`;
+
+/** 去掉角色名后仍含汉字/假名 = 没按要求写英文。 */
+export function isNonEnglishNl(name: string, text: string): boolean {
+  const rest = name ? text.split(name).join('') : text;
+  return /[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff]/.test(rest);
+}
 
 /** 从模型回复中解析 {角色名: 英文外貌句}(宽容:带代码块/前后杂质也能解)。 */
 export function parseConvertedNl(raw: string): Record<string, string> {
@@ -226,18 +236,35 @@ export async function generateCharNl(
   signal?: AbortSignal,
 ): Promise<Record<string, string>> {
   if (!entries.length) return {};
-  const messages: ChatMsg[] = [
-    { role: 'system', content: NL_CONVERT_SPEC },
-    { role: 'user', content: entries.map(describeEntryForNl).join('\n') },
-  ];
   const channel = getTagGenChannel();
-  const raw = channel
-    ? await requestCompletion(channel, messages, { signal, source: '角色外貌·自然语言' })
-    : await requestViaMainApi(messages, { signal, source: '角色外貌·自然语言' });
-  const parsed = parseConvertedNl(raw);
+  const ask = async (todo: typeof entries, retry: boolean): Promise<Record<string, string>> => {
+    const messages: ChatMsg[] = [
+      { role: 'system', content: NL_CONVERT_SPEC },
+      {
+        role: 'user',
+        content:
+          `Characters (fields are danbooru tags; 中文外貌 = Chinese notes to translate):\n${todo.map(describeEntryForNl).join('\n')}\n\n` +
+          (retry
+            ? 'Your previous answer was not in English. Rewrite every sentence in ENGLISH ONLY. Return the JSON object only.'
+            : 'Write the English appearance sentences now. Return the JSON object only.'),
+      },
+    ];
+    const raw = channel
+      ? await requestCompletion(channel, messages, { signal, source: '角色外貌·自然语言' })
+      : await requestViaMainApi(messages, { signal, source: '角色外貌·自然语言' });
+    return parseConvertedNl(raw);
+  };
+
   const out: Record<string, string> = {};
-  for (const entry of entries) {
-    if (parsed[entry.name]) out[entry.name] = parsed[entry.name];
+  let todo = entries;
+  // 最多两轮:第二轮只重问没返回或写成中文的条目;仍是中文就丢弃,不写进库
+  for (let round = 0; round < 2 && todo.length; round++) {
+    const parsed = await ask(todo, round > 0);
+    for (const entry of todo) {
+      const text = parsed[entry.name];
+      if (text && !isNonEnglishNl(entry.name, text)) out[entry.name] = text;
+    }
+    todo = todo.filter(entry => !out[entry.name]);
   }
   return out;
 }

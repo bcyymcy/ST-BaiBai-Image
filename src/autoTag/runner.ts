@@ -2,6 +2,7 @@ import { requestCompletion, requestViaMainApi } from '@/api/client';
 import { readBookMemory } from '@/autoTag/bookMemory';
 import {
   applyPositionedCharRefs,
+  isNonEnglishNl,
   resolveCharAnchors,
   type PositionedCharOp,
 } from '@/autoTag/charAnchors';
@@ -358,6 +359,13 @@ async function runForFloor(floor: number, opts: RunOptions = {}): Promise<void> 
           // 【bcy】MOSS 纯自然语言:之后每张图都照抄建档 nl,缺了就只能靠字段临场改写
           if (!slot && profile.nlOnly && candidate.changes.some(change => change.field === 'new' && !change.nl?.trim())) {
             throw new Error('纯自然语言模式建档必须附带 nl 外貌描述');
+          }
+          if (
+            !slot &&
+            profile.nlOnly &&
+            candidate.changes.some(change => change.field === 'new' && isNonEnglishNl(change.name, change.nl ?? ''))
+          ) {
+            throw new Error('建档的 nl 外貌描述必须用英文写');
           }
           parsed.plan = candidate;
         };

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { mossPromptValues } from '@/backends/comfyui';
-import { describeEntryForNl, parseConvertedNl } from '@/autoTag/charAnchors';
+import { describeEntryForNl, isNonEnglishNl, parseConvertedNl } from '@/autoTag/charAnchors';
 import { DEFAULT_MOSS_SPEC } from '@/autoTag/mossSpec';
 import { backendPromptSpec } from '@/autoTag/prompt';
 import { settings, type AutoTagSettings } from '@/state/settings';
@@ -48,5 +48,11 @@ describe('MOSS 纯自然语言', () => {
     expect(parseConvertedNl('<thinking>x</thinking>```json\n{"小雪":"A girl with long black hair."}\n```')).toEqual({
       小雪: 'A girl with long black hair.',
     });
+  });
+
+  it('isNonEnglishNl:中文外貌判为不合格,角色名本身是中文不算', () => {
+    expect(isNonEnglishNl('小雪', '一个黑色长发、蓝眼睛的少女')).toBe(true);
+    expect(isNonEnglishNl('小雪', '小雪, a girl with long black hair and blue eyes.')).toBe(false);
+    expect(isNonEnglishNl('Alice', 'A girl with long blonde hair.')).toBe(false);
   });
 });

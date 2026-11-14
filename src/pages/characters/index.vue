@@ -3,7 +3,7 @@ import BbiTextarea from '@/components/BbiTextarea.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import Icon from '@/components/Icon.vue';
 import ModalMask from '@/components/ModalMask.vue';
-import { generateCharNl, generateCharTags } from '@/autoTag/charAnchors';
+import { generateCharNl, generateCharTags, isNonEnglishNl } from '@/autoTag/charAnchors';
 import { readBookMemory } from '@/autoTag/bookMemory';
 import {
   CHAR_TAG_FIELDS,
@@ -276,16 +276,22 @@ async function writeDraftNl() {
   }
 }
 
+/** 还没有自然语言外貌,或之前写成了中文(MOSS 需要英文)。 */
+function needsNl(entry: CharTagEntry): boolean {
+  const nl = entry.nl.trim();
+  return !nl || isNonEnglishNl(entry.name, nl);
+}
+
 /** 本聊天 + 全局里还没有自然语言外貌的条目(同名时本聊天为准,全局同名条目也各自补)。 */
 const missingNlCount = computed(
   () =>
-    chatEntries.value.filter(entry => !entry.nl.trim()).length +
-    globalCharTagLib.entries.filter(entry => !entry.nl.trim()).length,
+    chatEntries.value.filter(entry => needsNl(entry)).length +
+    globalCharTagLib.entries.filter(entry => needsNl(entry)).length,
 );
 const bulkWritingNl = ref(false);
 async function writeAllMissingNl() {
-  const chatTodo = chatEntries.value.filter(entry => !entry.nl.trim());
-  const globalTodo = globalCharTagLib.entries.filter(entry => !entry.nl.trim());
+  const chatTodo = chatEntries.value.filter(entry => needsNl(entry));
+  const globalTodo = globalCharTagLib.entries.filter(entry => needsNl(entry));
   if (!chatTodo.length && !globalTodo.length) {
     toastr.info('所有角色都已有自然语言外貌', '柏宝绘');
     return;
