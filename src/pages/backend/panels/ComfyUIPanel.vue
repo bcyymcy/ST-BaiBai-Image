@@ -332,6 +332,46 @@ async function onAutoConfigure() {
   }
 }
 
+/* —— 【bcy】导入:从手机/电脑选一个 API 格式 JSON 文件填进工作流 —— */
+const importInput = ref<HTMLInputElement | null>(null);
+
+function pickWorkflowFile() {
+  importInput.value?.click();
+}
+
+async function onWorkflowFile(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = ''; // 同一个文件再选一次也能触发
+  if (!file) return;
+  try {
+    const text = (await file.text()).replace(/^\uFEFF/, '');
+    let data: unknown;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error('文件不是有效的 JSON');
+    }
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('文件内容不是工作流对象');
+    // 有人会把 {prompt: {...}} 整个请求体存下来,剥一层
+    const wrapped = (data as { prompt?: unknown }).prompt;
+    if (wrapped && typeof wrapped === 'object' && !Array.isArray(wrapped)) data = wrapped;
+    if (Array.isArray((data as { nodes?: unknown }).nodes)) {
+      throw new Error('这是 ComfyUI 的普通工作流格式；请在 ComfyUI 里用「导出 (API)」保存后再导入');
+    }
+    const nodes = Object.values(data as Record<string, unknown>);
+    if (!nodes.length || !nodes.every(n => n && typeof n === 'object' && 'class_type' in (n as object))) {
+      throw new Error('没有识别到 API 格式的节点（每个节点应有 class_type）');
+    }
+    active.value.workflow = JSON.stringify(data, null, 2);
+    const hasPrompt = active.value.workflow.includes('%prompt%');
+    toastr.success(`已导入 ${file.name}（${nodes.length} 个节点）`, '柏宝绘');
+    if (!hasPrompt) toastr.info('工作流里还没有 %prompt%，可以点「AI 自动配置」或手动加占位符', '柏宝绘');
+  } catch (error) {
+    toastr.error(errorMessage(error), '导入工作流失败');
+  }
+}
+
 function closeAssist() {
   assistOpen.value = false;
   assistResult.value = null;
@@ -734,6 +774,21 @@ function applyAssist() {
               <Icon name="sparkles" :size="12" />
               {{ configuring ? '分析中…' : 'AI 自动配置' }}
             </button>
+            <button
+              class="bbi-btn bbi-btn-sm"
+              type="button"
+              title="选择 ComfyUI「导出 (API)」保存的 .json 文件，替换下面的工作流 JSON"
+              @click="pickWorkflowFile"
+            >
+              导入
+            </button>
+            <input
+              ref="importInput"
+              type="file"
+              accept=".json,application/json"
+              style="display: none"
+              @change="onWorkflowFile"
+            />
           </span>
         </div>
         <BbiTextarea
