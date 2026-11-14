@@ -36,10 +36,17 @@ export interface LoraToggle {
   trigger: string;
 }
 
-/** 存起来的一套 LoRA 组合（只记开关与强度，触发词跟着 LoRA 本身走）。 */
-export interface LoraCombo {
+/**
+ * 画风预设：一套前缀/后缀/LoRA 的开关状态（+ LoRA 强度）。
+ * 只记开关，不记文字和触发词——那些改一次所有预设都跟着变。
+ */
+export interface StylePreset {
   id: string;
   name: string;
+  snippetsEnabled: boolean;
+  lorasEnabled: boolean;
+  /** 前缀/后缀条目 id → 是否开；没记录的条目切换时一律关。旧「LoRA 组合」迁移来的为 null（不动前后缀）。 */
+  snippets: Record<string, boolean> | null;
   loras: { name: string; strength: number; enabled: boolean }[];
 }
 
@@ -51,15 +58,20 @@ export interface ComfyExtras {
   /** LoRA 由插件接管。开着时改写 LoRA 管理器节点、屏蔽触发词节点。 */
   lorasEnabled: boolean;
   loras: LoraToggle[];
-  combos: LoraCombo[];
+  presets: StylePreset[];
+  /** 最近一次套用/保存的预设 id；空 = 没用预设。 */
+  activePresetId: string;
 }
 
 export const LORA_LOADER_CLASS = 'Lora Loader (LoraManager)';
 export const TRIGGER_TOGGLE_CLASS = 'TriggerWord Toggle (LoraManager)';
 export const PROMPT_SELECTOR_CLASS = 'PromptSelector';
+/** 没有 LoRA 管理器时自动插入的 ComfyUI 自带节点。 */
+export const CORE_LORA_CLASS = 'LoraLoader';
+export const CORE_LORA_MODEL_ONLY_CLASS = 'LoraLoaderModelOnly';
 
 export function extrasDefaults(): ComfyExtras {
-  return { snippetsEnabled: false, prefixes: [], suffixes: [], lorasEnabled: false, loras: [], combos: [] };
+  return { snippetsEnabled: false, prefixes: [], suffixes: [], lorasEnabled: false, loras: [], presets: [], activePresetId: '' };
 }
 
 let idSeq = 0;
@@ -102,12 +114,21 @@ function normalizeLora(raw: unknown): LoraToggle {
   };
 }
 
-function normalizeCombo(raw: unknown): LoraCombo {
+function normalizePreset(raw: unknown, legacyCombo = false): StylePreset {
   const o = isObject(raw) ? raw : {};
   const loras = Array.isArray(o.loras) ? o.loras : [];
+  let snippets: Record<string, boolean> | null = null;
+  if (!legacyCombo && isObject(o.snippets)) {
+    snippets = {};
+    for (const [id, on] of Object.entries(o.snippets)) snippets[id] = on === true;
+  }
   return {
-    id: str(o.id) || newExtraId('combo'),
+    id: str(o.id) || newExtraId('preset'),
     name: str(o.name),
+    // 旧组合只管 LoRA:接管开关默认开(组合本来就是在接管时用的),前后缀不动
+    snippetsEnabled: legacyCombo ? false : o.snippetsEnabled === true,
+    lorasEnabled: legacyCombo ? true : o.lorasEnabled === true,
+    snippets,
     loras: loras.map(item => {
       const l = isObject(item) ? item : {};
       return { name: str(l.name), strength: num(l.strength, 1), enabled: l.enabled === true };
@@ -125,12 +146,65 @@ export function normalizeExtras(raw: unknown): ComfyExtras {
     suffixes: list(o.suffixes).map(normalizeSnippet),
     lorasEnabled: o.lorasEnabled === true,
     loras: list(o.loras).map(normalizeLora),
-    combos: list(o.combos).map(normalizeCombo),
+    // 旧版「LoRA 组合」自动转成画风预设
+    presets: [...list(o.presets).map(p => normalizePreset(p)), ...list(o.combos).map(c => normalizePreset(c, true))],
+    activePresetId: str(o.activePresetId),
   };
 }
 
 export function cloneExtras(extras: ComfyExtras): ComfyExtras {
   return JSON.parse(JSON.stringify(extras)) as ComfyExtras;
+}
+
+/* ============ 画风预设 ============ */
+
+/** 把当前开关状态记成预设（同 id 覆盖时由调用方替换）。 */
+export function snapshotPreset(extras: ComfyExtras, name: string, id = newExtraId('preset')): StylePreset {
+  const snippets: Record<string, boolean> = {};
+  for (const s of [...extras.prefixes, ...extras.suffixes]) snippets[s.id] = s.enabled;
+  return {
+    id,
+    name,
+    snippetsEnabled: extras.snippetsEnabled,
+    lorasEnabled: extras.lorasEnabled,
+    snippets,
+    loras: extras.loras.map(l => ({ name: l.name, strength: l.strength, enabled: l.enabled })),
+  };
+}
+
+/** 套用预设（就地修改）。预设里没记的 LoRA/条目一律关；预设里有、列表里已删的 LoRA 补回来。 */
+export function applyPreset(extras: ComfyExtras, preset: StylePreset): void {
+  if (preset.snippets) {
+    extras.snippetsEnabled = preset.snippetsEnabled;
+    for (const s of [...extras.prefixes, ...extras.suffixes]) s.enabled = preset.snippets[s.id] === true;
+  }
+  extras.lorasEnabled = preset.lorasEnabled;
+  for (const lora of extras.loras) {
+    const hit = preset.loras.find(l => l.name === lora.name);
+    lora.enabled = !!hit?.enabled;
+    if (hit) lora.strength = hit.strength;
+  }
+  for (const hit of preset.loras) {
+    if (hit.name.trim() && !extras.loras.some(l => l.name === hit.name)) extras.loras.push({ ...hit, trigger: '' });
+  }
+  extras.activePresetId = preset.id;
+}
+
+/** 当前状态是否与预设一致（不一致 = 「已修改」）。 */
+export function presetMatches(extras: ComfyExtras, preset: StylePreset): boolean {
+  if (extras.lorasEnabled !== preset.lorasEnabled) return false;
+  for (const lora of extras.loras) {
+    const hit = preset.loras.find(l => l.name === lora.name);
+    if (lora.enabled !== !!hit?.enabled) return false;
+    if (lora.enabled && hit && Math.abs(hit.strength - lora.strength) > 1e-6) return false;
+  }
+  if (preset.snippets) {
+    if (extras.snippetsEnabled !== preset.snippetsEnabled) return false;
+    for (const s of [...extras.prefixes, ...extras.suffixes]) {
+      if (s.enabled !== (preset.snippets[s.id] === true)) return false;
+    }
+  }
+  return true;
 }
 
 /* ============ 拼接 ============ */
@@ -184,6 +258,7 @@ export function applyExtras(workflow: Workflow, extras: ComfyExtras): void {
   const tail = tailText(extras);
   // 只包第一个含 %prompt% 的输入：多处引用时重复拼前缀会让前缀出现两遍
   let wrapped = false;
+  const hasManager = loraMode(workflow) === 'manager';
 
   for (const node of Object.values(workflow)) {
     if (!isObject(node) || !isObject(node.inputs)) continue;
@@ -215,7 +290,7 @@ export function applyExtras(workflow: Workflow, extras: ComfyExtras): void {
     }
 
     // 3. LoRA 管理器
-    if (extras.lorasEnabled && node.class_type === LORA_LOADER_CLASS) {
+    if (extras.lorasEnabled && hasManager && node.class_type === LORA_LOADER_CLASS) {
       const list = extras.loras
         .filter(l => l.name.trim())
         .map(l => ({
@@ -231,6 +306,9 @@ export function applyExtras(workflow: Workflow, extras: ComfyExtras): void {
       inputs.text = list.map(l => `<lora:${l.name}:${l.strength}>`).join(' ');
     }
   }
+
+  // 3a. 没有 LoRA 管理器:在模型加载节点后串 ComfyUI 自带的 LoRA 节点
+  if (extras.lorasEnabled && !hasManager) insertCoreLoras(workflow, extras.loras);
 
   // 3b. 屏蔽触发词节点：把引用它输出的连线换成空串
   if (extras.lorasEnabled) {
@@ -250,6 +328,75 @@ export function applyExtras(workflow: Workflow, extras: ComfyExtras): void {
       }
     }
   }
+}
+
+/* ============ 自动插入 LoRA（无 LoRA 管理器时） ============ */
+
+const MODEL_LOADER_RE = /CheckpointLoader|UNETLoader|UnetLoader|DiffusionModelLoader|ModelLoader/i;
+
+/** 工作流里的 LoRA 由谁加载:manager = 有 LoRA 管理器节点;insert = 插件自动插入。 */
+export function loraMode(workflow: Workflow): 'manager' | 'insert' {
+  return Object.values(workflow).some(n => isObject(n) && n.class_type === LORA_LOADER_CLASS) ? 'manager' : 'insert';
+}
+
+/** 找模型加载节点(第一个类名像 Checkpoint/UNET 加载器的)。 */
+export function findModelLoader(workflow: Workflow): { id: string; checkpoint: boolean } | null {
+  for (const [id, node] of Object.entries(workflow)) {
+    if (!isObject(node)) continue;
+    const cls = str(node.class_type);
+    if (MODEL_LOADER_RE.test(cls) && !/lora/i.test(cls)) return { id, checkpoint: /checkpoint/i.test(cls) };
+  }
+  return null;
+}
+
+function isLink(value: unknown, id: string, slot: number): boolean {
+  return Array.isArray(value) && value.length === 2 && String(value[0]) === id && Number(value[1]) === slot;
+}
+
+/**
+ * 在模型加载节点后串联 LoRA 节点(就地修改)。
+ * - Checkpoint 加载器:用 LoraLoader,同时接管 model(0) 和 clip(1);
+ * - 单独的 UNET/扩散模型加载器:用 LoraLoaderModelOnly,只接 model。
+ * 原来连到模型(及 clip)输出的节点改连到最后一个 LoRA。没有开着的 LoRA 时不动。
+ */
+export function insertCoreLoras(workflow: Workflow, loras: LoraToggle[]): number {
+  const active = loras.filter(l => l.enabled && l.name.trim());
+  if (!active.length) return 0;
+  const loader = findModelLoader(workflow);
+  if (!loader) {
+    throw new Error('工作流里没有 LoRA 管理器节点，也找不到模型加载节点（Checkpoint/UNET 加载器），无法自动插入 LoRA；请关掉「由插件管理 LoRA」或检查工作流');
+  }
+  const numericIds = Object.keys(workflow).map(Number).filter(Number.isFinite);
+  let nextId = Math.max(1000, ...numericIds) + 1;
+  let model: [string, number] = [loader.id, 0];
+  let clip: [string, number] = [loader.id, 1];
+  const created = new Set<string>();
+  for (const lora of active) {
+    const id = String(nextId++);
+    const strength = Number(lora.strength.toFixed(2));
+    workflow[id] = loader.checkpoint
+      ? {
+          class_type: CORE_LORA_CLASS,
+          inputs: { lora_name: lora.name.trim(), strength_model: strength, strength_clip: strength, model, clip },
+          _meta: { title: `柏宝绘 LoRA：${lora.name.trim()}` },
+        }
+      : {
+          class_type: CORE_LORA_MODEL_ONLY_CLASS,
+          inputs: { lora_name: lora.name.trim(), strength_model: strength, model },
+          _meta: { title: `柏宝绘 LoRA：${lora.name.trim()}` },
+        };
+    created.add(id);
+    model = [id, 0];
+    if (loader.checkpoint) clip = [id, 1];
+  }
+  for (const [id, node] of Object.entries(workflow)) {
+    if (created.has(id) || !isObject(node) || !isObject(node.inputs)) continue;
+    for (const [key, value] of Object.entries(node.inputs)) {
+      if (isLink(value, loader.id, 0)) node.inputs[key] = [...model];
+      else if (loader.checkpoint && isLink(value, loader.id, 1)) node.inputs[key] = [...clip];
+    }
+  }
+  return active.length;
 }
 
 /* ============ 从工作流导入 ============ */

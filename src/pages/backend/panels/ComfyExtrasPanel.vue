@@ -18,18 +18,25 @@ import {
   tailText,
   type LoraToggle,
   type PromptSnippet,
+  applyPreset,
+  findModelLoader,
+  loraMode,
+  presetMatches,
+  snapshotPreset,
+  type StylePreset,
 } from '@/backends/comfyExtras';
 import { fetchComfyModelLists } from '@/backends/comfyObjectInfo';
 import { parseWorkflowTemplate, renderWorkflowTemplate } from '@/backends/comfyui';
 import { cachedTranslation, translatePrompt, type TranslateDirection } from '@/api/translate';
 import BbiCombo from '@/components/BbiCombo.vue';
+import BbiSelect from '@/components/BbiSelect.vue';
 import BbiTextarea from '@/components/BbiTextarea.vue';
 import Collapsible from '@/components/Collapsible.vue';
 import Icon from '@/components/Icon.vue';
 import { lastActual, records } from '@/state/history';
 import { activeComfyPreset, settings } from '@/state/settings';
 import { copyText } from '@/st/clipboard';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 const active = computed(() => activeComfyPreset());
 const extras = computed(() => active.value.extras);
@@ -262,39 +269,68 @@ async function fetchTrigger(lora: LoraToggle) {
   }
 }
 
-/* LoRA 组合 */
-const comboName = ref('');
+/* 画风预设 */
+const presetName = ref('');
+const selectedPresetId = ref(extras.value.activePresetId);
+watch(() => extras.value.activePresetId, id => (selectedPresetId.value = id));
+watch(() => active.value.id, () => (selectedPresetId.value = extras.value.activePresetId));
 
-function saveCombo() {
-  const name = comboName.value.trim() || `组合 ${extras.value.combos.length + 1}`;
-  const snapshot = extras.value.loras.map(l => ({ name: l.name, strength: l.strength, enabled: l.enabled }));
-  const existing = extras.value.combos.find(c => c.name === name);
-  if (existing) existing.loras = snapshot;
-  else extras.value.combos.push({ id: newExtraId('combo'), name, loras: snapshot });
-  comboName.value = '';
-  toastr.success(`已保存 LoRA 组合「${name}」`, '柏宝绘');
-}
+const presetOptions = computed(() => extras.value.presets.map(p => ({ value: p.id, label: p.name || '（未命名）' })));
+const currentPreset = computed(() => extras.value.presets.find(p => p.id === extras.value.activePresetId) ?? null);
+const presetDirty = computed(() => !!currentPreset.value && !presetMatches(extras.value, currentPreset.value));
 
-function applyCombo(id: string) {
-  const combo = extras.value.combos.find(c => c.id === id);
-  if (!combo) return;
-  for (const lora of extras.value.loras) {
-    const hit = combo.loras.find(c => c.name === lora.name);
-    lora.enabled = !!hit?.enabled;
-    if (hit) lora.strength = hit.strength;
+function presetSummary(preset: StylePreset): string {
+  const loras = preset.loras.filter(l => l.enabled).map(l => `${l.name}×${l.strength}`);
+  const parts = [preset.lorasEnabled ? (loras.join('、') || 'LoRA 全关') : 'LoRA 不管理'];
+  if (preset.snippets) {
+    const on = Object.values(preset.snippets).filter(Boolean).length;
+    parts.push(preset.snippetsEnabled ? `前后缀开 ${on} 条` : '前后缀不管理');
+  } else {
+    parts.push('前后缀不变（旧 LoRA 组合）');
   }
-  // 组合里有、列表里已删的 LoRA 补回来
-  for (const hit of combo.loras) {
-    if (!extras.value.loras.some(l => l.name === hit.name)) {
-      extras.value.loras.push({ ...hit, trigger: '' });
-    }
-  }
+  return parts.join('；');
 }
 
-function removeCombo(id: string) {
-  const index = extras.value.combos.findIndex(c => c.id === id);
-  if (index >= 0) extras.value.combos.splice(index, 1);
+function switchPreset(id: string) {
+  selectedPresetId.value = id;
+  const preset = extras.value.presets.find(p => p.id === id);
+  if (!preset) return;
+  applyPreset(extras.value, preset);
+  toastr.success(`已切换到画风「${preset.name}」`, '柏宝绘');
 }
+
+function savePreset() {
+  const name = presetName.value.trim() || currentPreset.value?.name || `画风 ${extras.value.presets.length + 1}`;
+  const index = extras.value.presets.findIndex(p => p.name === name);
+  const snapshot = snapshotPreset(extras.value, name, index >= 0 ? extras.value.presets[index]!.id : undefined);
+  if (index >= 0) extras.value.presets.splice(index, 1, snapshot);
+  else extras.value.presets.push(snapshot);
+  extras.value.activePresetId = snapshot.id;
+  presetName.value = '';
+  toastr.success(`已保存画风「${name}」`, '柏宝绘');
+}
+
+function removePreset(id: string) {
+  const index = extras.value.presets.findIndex(p => p.id === id);
+  if (index < 0) return;
+  extras.value.presets.splice(index, 1);
+  if (extras.value.activePresetId === id) extras.value.activePresetId = '';
+}
+
+/** 当前工作流里 LoRA 由谁加载。 */
+const loraModeText = computed(() => {
+  try {
+    const template = parseWorkflowTemplate(active.value.workflow);
+    if (loraMode(template) === 'manager') return '工作流里有 LoRA 管理器节点：出图时改写它的 LoRA 列表。';
+    const loader = findModelLoader(template);
+    if (!loader) return '⚠ 工作流里没有 LoRA 管理器，也找不到模型加载节点：开着 LoRA 出图会报错。';
+    return loader.checkpoint
+      ? '工作流里没有 LoRA 管理器：出图时自动在 Checkpoint 加载器后插入 ComfyUI 自带的 LoRA 节点（模型和 CLIP 都生效）。'
+      : '工作流里没有 LoRA 管理器：出图时自动在模型加载器后插入 ComfyUI 自带的 LoRA 节点（只作用于模型）。';
+  } catch {
+    return '';
+  }
+});
 
 /* ============ 预览 ============ */
 
@@ -341,7 +377,40 @@ function time(ts: number): string {
 
 <template>
   <template v-if="active.mode === 'custom'">
-    <Collapsible title="前缀 / 后缀" :open="false">
+    <Collapsible title="画风" :open="false">
+      <section class="ex-group">
+        <div class="ex-group-head">
+          <span class="bbi-field-label">
+            画风预设
+            <template v-if="currentPreset">：{{ currentPreset.name }}<span v-if="presetDirty" class="ex-dirty">（已修改）</span></template>
+          </span>
+        </div>
+        <p class="bbi-field-hint ex-hint">
+          一个预设记下前缀、后缀、LoRA 的开关和 LoRA 强度，切换时一起套用；文字和触发词不进预设，改一次所有预设都生效。预设跟着当前工作流。
+        </p>
+        <div v-if="extras.presets.length" class="ex-add-row">
+          <BbiSelect
+            :model-value="selectedPresetId"
+            :options="presetOptions"
+            aria-label="画风预设"
+            @update:model-value="switchPreset(String($event))"
+          />
+        </div>
+        <div class="ex-add-row">
+          <input v-model="presetName" class="bbi-input" type="text" :placeholder="currentPreset ? `预设名字（空 = 覆盖「${currentPreset.name}」）` : '预设名字，如 成熟女性 / 少女'" />
+          <button class="bbi-btn bbi-btn-sm" type="button" @click="savePreset">存为预设</button>
+        </div>
+        <div v-for="preset in extras.presets" :key="preset.id" class="ex-combo">
+          <span class="ex-combo-name">{{ preset.name }}</span>
+          <span class="ex-combo-detail">{{ presetSummary(preset) }}</span>
+          <button class="bbi-btn bbi-btn-sm" type="button" :disabled="preset.id === extras.activePresetId && !presetDirty" @click="switchPreset(preset.id)">切换</button>
+          <button class="bbi-icon-btn ex-op ex-remove" type="button" title="删除预设" @click="removePreset(preset.id)">
+            <Icon name="trash" :size="14" />
+          </button>
+        </div>
+      </section>
+
+      <div class="ex-section-title">前缀 / 后缀</div>
       <label class="bbi-switch-row">
         <span class="bbi-field-label">由插件管理前缀/后缀</span>
         <input v-model="extras.snippetsEnabled" type="checkbox" class="bbi-checkbox" />
@@ -419,16 +488,16 @@ function time(ts: number): string {
           </div>
         </div>
       </section>
-    </Collapsible>
 
-    <Collapsible title="LoRA" :open="false">
+      <div class="ex-section-title">LoRA</div>
       <label class="bbi-switch-row">
         <span class="bbi-field-label">由插件管理 LoRA</span>
         <input v-model="extras.lorasEnabled" type="checkbox" class="bbi-checkbox" />
       </label>
       <p class="bbi-field-hint ex-hint">
-        开启后，出图时按下面的开关和强度改写工作流里的 LoRA 管理器节点；打开的 LoRA 的触发词拼在最前面，工作流里的触发词节点自动失效，不会重复。
+        开启后，出图时按下面的开关和强度加载 LoRA；打开的 LoRA 的触发词拼在最前面，工作流里的触发词节点自动失效，不会重复。不需要 LoRA 管理器，名字要和电脑 loras 文件夹里一致（可点「读取电脑上的 LoRA」从列表选）。
       </p>
+      <p v-if="loraModeText" class="bbi-field-hint ex-hint">{{ loraModeText }}</p>
       <div class="ex-tools">
         <button class="bbi-btn bbi-btn-sm" type="button" :disabled="!active.workflow.trim()" @click="importFromWorkflow('loras')">
           <Icon name="plus" :size="12" />
@@ -470,25 +539,6 @@ function time(ts: number): string {
       </div>
       <p v-if="triggersText" class="bbi-field-hint">当前触发词：{{ triggersText }}</p>
 
-      <section class="ex-group">
-        <div class="ex-group-head">
-          <span class="bbi-field-label">LoRA 组合</span>
-        </div>
-        <div class="ex-add-row">
-          <input v-model="comboName" class="bbi-input" type="text" placeholder="组合名字（同名覆盖）" />
-          <button class="bbi-btn bbi-btn-sm" type="button" :disabled="!extras.loras.length" @click="saveCombo">保存当前</button>
-        </div>
-        <div v-for="combo in extras.combos" :key="combo.id" class="ex-combo">
-          <span class="ex-combo-name">{{ combo.name }}</span>
-          <span class="ex-combo-detail">
-            {{ combo.loras.filter(l => l.enabled).map(l => `${l.name}×${l.strength}`).join('、') || '全关' }}
-          </span>
-          <button class="bbi-btn bbi-btn-sm" type="button" @click="applyCombo(combo.id)">切换</button>
-          <button class="bbi-icon-btn ex-op ex-remove" type="button" title="删除组合" @click="removeCombo(combo.id)">
-            <Icon name="trash" :size="14" />
-          </button>
-        </div>
-      </section>
     </Collapsible>
 
     <Collapsible title="工作流预览" :open="false">
@@ -578,6 +628,17 @@ function time(ts: number): string {
 </template>
 
 <style scoped>
+.ex-section-title {
+  margin: 14px 0 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--bbi-line);
+  font-weight: 600;
+}
+.ex-dirty {
+  margin-left: 4px;
+  color: var(--bbi-warn, #d08a00);
+  font-weight: normal;
+}
 .ex-hint {
   margin: 2px 0 6px;
 }
