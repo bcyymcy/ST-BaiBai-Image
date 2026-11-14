@@ -23,6 +23,7 @@ import {
   type ImageDisplaySize,
 } from '@/state/settings';
 import { getContext } from '@/st/context';
+import { DEFAULT_MOSS_SPEC } from '@/autoTag/mossSpec';
 import { applyFaceless, defaultFacelessRules, DEFAULT_FACELESS_NEGATIVE, newFacelessRule, type FacelessScope } from '@/faceless';
 import {
   ORB_SHAPES,
@@ -215,6 +216,13 @@ const TAG_PROMPT_METAS: TagPromptMeta[] = [
     hint: '默认后端为 ComfyUI 时使用的输出前思考清单，作为 system 压在任务消息之后（解析时会自动剥掉思考块）。与「ComfyUI 规范」配套，同样支持 {{#nl}}…{{/nl}} / {{^nl}}…{{/nl}} 条件段。留空用内置默认。',
     builtin: DEFAULT_COMFY_THINKING,
     macros: NL_SECTION_MACROS,
+  },
+  {
+    key: 'mossSpec',
+    label: 'MOSS 规范（纯自然语言）',
+    hint: '【bcy】ComfyUI 当前工作流的「提示词风格」选了「纯自然语言（MOSS 等）」时，用它代替「ComfyUI 规范」：AI 只写一段详细英文画面描述，角色外貌照抄角色库的自然语言外貌。思维链仍用「ComfyUI 思维链」。留空用内置默认。',
+    builtin: DEFAULT_MOSS_SPEC,
+    macros: [],
   },
 ];
 

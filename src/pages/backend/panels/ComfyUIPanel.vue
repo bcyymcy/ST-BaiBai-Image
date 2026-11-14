@@ -249,6 +249,17 @@ const simpleState = computed(() => {
     : { tone: 'ok', text: '有效', detail: '' };
 });
 
+// 【bcy】提示词风格:tag(Anima 等,tag+自然语言)/ moss(纯自然语言)
+const promptStyleOptions = [
+  { value: 'tag', label: 'tag + 自然语言(Anima / Illustrious 等)' },
+  { value: 'moss', label: '纯自然语言(MOSS 等)' },
+];
+const promptStyleHint = computed(() =>
+  active.value.promptStyle === 'moss'
+    ? 'AI 只写一段详细的英文画面描述,出图时只把它发给模型(%prompt% 自动留空,工作流没有 %nl% 时改放进 %prompt%)。角色外貌照抄角色库的「自然语言外貌」,可在角色管理页用 AI 一键补写。'
+    : '与原版一致:AI 写 danbooru tag,开启「生成自然语言」时再加一段描述。',
+);
+
 const nlHint = computed(() =>
   active.value.mode === 'simple'
     ? '额外生成一段自然语言描述;简易模式下优先于 tag 作为正向提示词(Flux/Anima 建议开启)'
@@ -523,11 +534,24 @@ function applyAssist() {
           </span>
         </div>
 
-        <label class="bbi-switch-row">
-          <span class="bbi-field-label">生成自然语言</span>
-          <input v-model="active.naturalLanguage" type="checkbox" class="bbi-checkbox" />
-        </label>
-        <p class="bbi-field-hint wf-switch-hint">{{ nlHint }}</p>
+        <div class="bbi-num-row">
+          <span class="bbi-field-label">提示词风格</span>
+          <BbiSelect
+            class="wf-style-select"
+            v-model="active.promptStyle"
+            :options="promptStyleOptions"
+            aria-label="提示词风格"
+          />
+        </div>
+        <p class="bbi-field-hint wf-switch-hint">{{ promptStyleHint }}</p>
+
+        <template v-if="active.promptStyle !== 'moss'">
+          <label class="bbi-switch-row">
+            <span class="bbi-field-label">生成自然语言</span>
+            <input v-model="active.naturalLanguage" type="checkbox" class="bbi-checkbox" />
+          </label>
+          <p class="bbi-field-hint wf-switch-hint">{{ nlHint }}</p>
+        </template>
 
         <div class="bbi-num-row">
           <span class="bbi-field-label">竖屏尺寸(宽×高)</span>

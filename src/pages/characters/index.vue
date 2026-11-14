@@ -3,7 +3,7 @@ import BbiTextarea from '@/components/BbiTextarea.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import Icon from '@/components/Icon.vue';
 import ModalMask from '@/components/ModalMask.vue';
-import { generateCharTags } from '@/autoTag/charAnchors';
+import { generateCharNl, generateCharTags } from '@/autoTag/charAnchors';
 import { readBookMemory } from '@/autoTag/bookMemory';
 import {
   CHAR_TAG_FIELDS,
@@ -250,6 +250,70 @@ function copyToChat() {
   closeEntry();
 }
 
+/* —— 【bcy】AI 写自然语言外貌(MOSS 纯自然语言模式照抄这一句) —— */
+const writingNl = ref(false);
+async function writeDraftNl() {
+  const d = draft.value;
+  if (!d) return;
+  const name = d.name.trim();
+  if (!name || !previewTag.value) {
+    toastr.warning('先填写角色名和外貌字段', '柏宝绘');
+    return;
+  }
+  writingNl.value = true;
+  try {
+    const result = await generateCharNl([{ name, fields: d.fields, raw: d.raw, desc: draftDesc.value }]);
+    if (!result[name]) {
+      toastr.warning('模型没有返回该角色的外貌描述,请重试', '柏宝绘');
+      return;
+    }
+    d.nl = result[name];
+    toastr.success('已写好自然语言外貌,检查后点「完成」保存', '柏宝绘');
+  } catch (error) {
+    toastr.error(error instanceof Error ? error.message : String(error), '柏宝绘');
+  } finally {
+    writingNl.value = false;
+  }
+}
+
+/** 本聊天 + 全局里还没有自然语言外貌的条目(同名时本聊天为准,全局同名条目也各自补)。 */
+const missingNlCount = computed(
+  () =>
+    chatEntries.value.filter(entry => !entry.nl.trim()).length +
+    globalCharTagLib.entries.filter(entry => !entry.nl.trim()).length,
+);
+const bulkWritingNl = ref(false);
+async function writeAllMissingNl() {
+  const chatTodo = chatEntries.value.filter(entry => !entry.nl.trim());
+  const globalTodo = globalCharTagLib.entries.filter(entry => !entry.nl.trim());
+  if (!chatTodo.length && !globalTodo.length) {
+    toastr.info('所有角色都已有自然语言外貌', '柏宝绘');
+    return;
+  }
+  bulkWritingNl.value = true;
+  try {
+    const unique = new Map<string, CharTagEntry>();
+    for (const entry of [...chatTodo, ...globalTodo]) if (!unique.has(entry.name)) unique.set(entry.name, entry);
+    const result = await generateCharNl([...unique.values()]);
+    let done = 0;
+    for (const entry of chatTodo) {
+      const nl = result[entry.name];
+      if (nl && upsertCharTag({ ...entry, nl }, entry.name, { recordChanges: true })) done++;
+    }
+    for (const entry of globalTodo) {
+      const nl = result[entry.name];
+      if (nl && upsertGlobalCharTag({ ...entry, nl }, entry.name)) done++;
+    }
+    const total = chatTodo.length + globalTodo.length;
+    if (done) toastr.success(`已为 ${done} 个角色写好自然语言外貌${done < total ? `(${total - done} 个没返回,可再点一次)` : ''}`, '柏宝绘');
+    else toastr.warning('模型没有返回外貌描述,请重试', '柏宝绘');
+  } catch (error) {
+    toastr.error(error instanceof Error ? error.message : String(error), '柏宝绘');
+  } finally {
+    bulkWritingNl.value = false;
+  }
+}
+
 /* —— 从柏宝书最新状态建档:取最新楼的角色参考,找到同名角色的外貌记录,批量转换接口转字段 —— */
 async function regenerateFromBook() {
   const d = draft.value;
@@ -326,6 +390,15 @@ function sourceLabel(entry: CharTagEntry): string {
   <section class="bbi-page">
     <div class="bbi-page-head">
       <h2 class="bbi-title bbi-title-sub">角色管理</h2>
+      <button
+        class="bbi-btn bbi-btn-sm"
+        type="button"
+        title="用生成 tag 的 API,为还没有「自然语言外貌」的角色各写一句英文外貌描述(MOSS 纯自然语言模式会照抄它)"
+        :disabled="bulkWritingNl || !missingNlCount"
+        @click="writeAllMissingNl"
+      >
+        {{ bulkWritingNl ? '补写中…' : `AI 补写自然语言外貌${missingNlCount ? `(${missingNlCount})` : ''}` }}
+      </button>
     </div>
     <hr class="bbi-rule" />
 
@@ -531,13 +604,24 @@ function sourceLabel(entry: CharTagEntry): string {
         </label>
 
         <label class="bbi-modal-field">
-          <span class="bbi-modal-label">自然语言外貌(可选)</span>
+          <span class="bbi-modal-label">
+            自然语言外貌(MOSS 纯自然语言模式照抄这一句)
+            <button
+              class="bbi-btn bbi-btn-sm"
+              type="button"
+              title="按上面的字段和柏宝书外貌,让 AI 写一句英文外貌描述"
+              :disabled="writingNl"
+              @click.prevent="writeDraftNl"
+            >
+              {{ writingNl ? '写作中…' : 'AI 写' }}
+            </button>
+          </span>
           <BbiTextarea
             v-model="draft.nl"
             :rows="2"
-            :max-rows="4"
+            :max-rows="5"
             mono
-            placeholder="一句连贯英文外貌描述,自然语言模式下替换 nl 里的 @角色名 用;留空则用 tag 串替换"
+            placeholder="一句连贯英文外貌描述,如 A slender girl with long straight black hair and large blue eyes.;留空时按字段临场改写"
             @input="markManual"
           />
         </label>

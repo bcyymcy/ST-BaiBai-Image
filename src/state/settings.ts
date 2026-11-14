@@ -84,7 +84,16 @@ export interface ComfyWorkflowPreset extends SizePair {
   orientationLock: OrientationLock;
   /** 【bcy】插件侧接管的前后缀与 LoRA 开关(仅自定义工作流生效)。 */
   extras: ComfyExtras;
+  /**
+   * 【bcy】提示词风格:
+   * - tag:tag + 自然语言(Anima/Illustrious 等,与原版一致);
+   * - moss:纯自然语言(MOSS 等 LLM 编码器底模)。AI 主写 nl,出图时 %prompt% 置空。
+   */
+  promptStyle: ComfyPromptStyle;
 }
+
+/** 【bcy】见 ComfyWorkflowPreset.promptStyle。 */
+export type ComfyPromptStyle = 'tag' | 'moss';
 
 /**
  * 出图/测试连接实际需要的字段:渠道级 url + 当前预设派生(见 effectiveComfyConn)。
@@ -99,6 +108,8 @@ export interface ComfyRunConn extends SizePair {
   simple: ComfySimpleConfig;
   /** 【bcy】见 ComfyWorkflowPreset.extras;缺省 = 不改写工作流。 */
   extras?: ComfyExtras;
+  /** 【bcy】见 ComfyWorkflowPreset.promptStyle;缺省 = tag。 */
+  promptStyle?: ComfyPromptStyle;
 }
 
 /** ComfyUI 连接与工作流库。 */
@@ -1020,6 +1031,8 @@ export interface AutoTagPrompts {
    *  思维链按后端各存一份:槽位块要求填的字段必须在同后端规范里有判据和词表,
    *  共用一份会让某个后端被要求填它的规范从未教过的东西。 */
   comfyThinking: string;
+  /** 【bcy】MOSS 纯自然语言风格的规范;留空回落内置默认(DEFAULT_MOSS_SPEC)。 */
+  mossSpec: string;
   /** 【已下线,无 UI 入口】NAI 4 系及以下的思考清单;回落 DEFAULT_NAI_THINKING。 */
   naiThinking: string;
   /** NAI 思维链(4.5/V5);留空回落内置默认(DEFAULT_NAI_V5_THINKING)。
@@ -1100,6 +1113,7 @@ export function newComfyWorkflow(name = DEFAULT_WORKFLOW_NAME): ComfyWorkflowPre
     landscapeSize: DEFAULT_LANDSCAPE_SIZE,
     orientationLock: 'auto',
     extras: extrasDefaults(),
+    promptStyle: 'tag',
   };
 }
 
@@ -1210,6 +1224,7 @@ function defaults(): ImageSettings {
         naiV5Spec: '',
         comfySpec: '',
         comfyThinking: '',
+        mossSpec: '',
         naiThinking: '',
         naiV5Thinking: '',
       },
@@ -1316,6 +1331,7 @@ export function effectiveComfyConn(): ComfyRunConn {
     portraitSize: preset.portraitSize,
     landscapeSize: preset.landscapeSize,
     extras: preset.extras,
+    promptStyle: preset.promptStyle,
   };
 }
 
@@ -1413,6 +1429,7 @@ function normalizeWorkflowPreset(raw: unknown, seq: number): ComfyWorkflowPreset
     landscapeSize: size(o.landscapeSize, DEFAULT_LANDSCAPE_SIZE),
     orientationLock: normalizeOrientationLock(o.orientationLock),
     extras: normalizeExtras(o.extras),
+    promptStyle: o.promptStyle === 'moss' ? 'moss' : 'tag',
   };
 }
 
@@ -1825,6 +1842,7 @@ function normalize(raw: unknown): ImageSettings {
         naiV5Spec: typeof rp.naiV5Spec === 'string' ? rp.naiV5Spec : '',
         comfySpec: typeof rp.comfySpec === 'string' ? rp.comfySpec : '',
         comfyThinking: typeof rp.comfyThinking === 'string' ? rp.comfyThinking : legacyThinking,
+        mossSpec: typeof rp.mossSpec === 'string' ? rp.mossSpec : '',
         naiThinking: typeof rp.naiThinking === 'string' ? rp.naiThinking : legacyThinking,
         naiV5Thinking: typeof rp.naiV5Thinking === 'string' ? rp.naiV5Thinking : '',
       };

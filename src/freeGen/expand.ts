@@ -89,6 +89,10 @@ export function buildFreeGenMessages(
   if (profile.naiCharPrompts) {
     sample.characters = [{ name: '角色名', tag: 'girl, long black hair, sleeping', ...(profile.nl ? { nl: 'The girl sleeps on her side.' } : {}) }];
   }
+  if (profile.nlOnly) {
+    sample.tag = '1girl, 1boy, cowboy shot';
+    sample.nl = 'A cowboy shot in a vertical frame of two people, a girl and a young man, lying together on a bed in a dim bedroom... (full appearance, poses, expressions, clothing, light and background)';
+  }
   if (negativeOn) sample.negative = 'standing, outdoors';
   sample.size = profile.lockedSize ?? 'portrait';
 
@@ -105,8 +109,8 @@ export function buildFreeGenMessages(
 1. ${who}其余人名按角色卡、角色固定外貌库对应；对不上的人按想法合理设定外貌。
 2. 想法没说的全部由你补齐并且彼此一致：场景与陈设、时间与光线、每个人的姿势动作与身体朝向、表情与视线、服装（款式、颜色、穿着状态）、构图景别与镜头角度、氛围。补的内容不得与想法冲突，也不要加入想法里没有的人。
 3. 共 ${count} 张。${count > 1 ? '每张都是同一个想法下明显不同的画面（换构图、换瞬间或换镜头），不要几乎相同的版本。' : ''}
-4. 画面里的角色若在【角色固定外貌库】中，外貌照抄库中字段，用词一字不改；同一张图里一个人的外貌只写一遍。
-5. ${profile.nl ? 'tag 与 nl 是同一画面的两种写法：tag 是 danbooru 短 tag，nl 是连贯的英文自然语言；' : 'tag 是 danbooru 短 tag；'}都只写正面内容，不写质量词、不写负面词。${negativeOn ? '\n   negative 是本画面专用的负面短 tag，只排除这张图特别容易画错的内容，可为空；不写通用质量负面词，也不能否定本图 tag/nl 里写了的东西。' : ''}
+4. ${profile.nlOnly ? '画面里的角色若在【角色固定外貌库】中：档案有 nl=（自然语言外貌）时把那句原样写进 nl，用词一字不改；只有字段时把每个字段改写进一句英文外貌描述，一个都不能漏或改。同一张图里一个人的外貌只完整写一遍。' : '画面里的角色若在【角色固定外貌库】中，外貌照抄库中字段，用词一字不改；同一张图里一个人的外貌只写一遍。'}
+5. ${profile.nlOnly ? '本次是纯自然语言模式：nl 是唯一发给生图模型的提示词，按后端规范写成一段详细的英文画面描述；tag 只写人数、景别和角色名（10 个词以内）。' : profile.nl ? 'tag 与 nl 是同一画面的两种写法：tag 是 danbooru 短 tag，nl 是连贯的英文自然语言；' : 'tag 是 danbooru 短 tag；'}都只写正面内容，不写质量词、不写负面词。${negativeOn ? '\n   negative 是本画面专用的负面短 tag，只排除这张图特别容易画错的内容，可为空；不写通用质量负面词，也不能否定本图 tag/nl 里写了的东西。' : ''}
 6. ${profile.lockedSize ? `size 已锁定，一律填 "${profile.lockedSize}"。` : 'size 只能填 "portrait"（竖图）或 "landscape"（横图）。'}
 7. summary 用一句中文概述这张图画的是什么，给用户看。
 
@@ -177,7 +181,7 @@ export async function expandIdea(options: FreeGenOptions, signal?: AbortSignal):
     options.useLibrary && context ? buildLibraryText(charTagsBeforeFloor(context.chat.length), lockedNames) : '';
   const prompts = settings.autoTag.prompts;
   const messages = buildFreeGenMessages(options, {
-    spec: backendPromptSpec(settings.autoTag, profile.nl, profile.naiCharPrompts),
+    spec: backendPromptSpec(settings.autoTag, profile.nl, profile.naiCharPrompts, !!profile.nlOnly),
     profile,
     negativeOn: freeGenNegativeOn(),
     jailbreak: (prompts?.jailbreak ?? '').trim() || DEFAULT_JAILBREAK_PROMPT,

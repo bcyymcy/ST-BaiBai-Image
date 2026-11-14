@@ -147,6 +147,7 @@ describe('ComfyUI 工作流库迁移', () => {
       portraitSize: '1024×1024',
       landscapeSize: '1024×1024',
       extras: { snippetsEnabled: false, prefixes: [], suffixes: [], lorasEnabled: false, loras: [], presets: [], activePresetId: "" },
+      promptStyle: 'tag',
     });
   });
 });

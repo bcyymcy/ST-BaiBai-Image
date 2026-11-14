@@ -355,6 +355,10 @@ async function runForFloor(floor: number, opts: RunOptions = {}): Promise<void> 
           ) {
             throw new Error('NAI 4.5/V5 建档必须附带 nl 外貌描述');
           }
+          // 【bcy】MOSS 纯自然语言:之后每张图都照抄建档 nl,缺了就只能靠字段临场改写
+          if (!slot && profile.nlOnly && candidate.changes.some(change => change.field === 'new' && !change.nl?.trim())) {
+            throw new Error('纯自然语言模式建档必须附带 nl 外貌描述');
+          }
           parsed.plan = candidate;
         };
         // 有重试时给 source 带上第几次,历史里两条记录一眼看出是重试关系

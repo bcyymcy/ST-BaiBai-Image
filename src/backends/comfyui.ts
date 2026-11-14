@@ -498,14 +498,28 @@ async function pollDirectResult(
   }
 }
 
+/**
+ * 【bcy】MOSS 纯自然语言风格:只把 nl 发给模型。
+ * - 工作流里有 %nl% 占位:%prompt% 置空,nl 原样进 %nl%;
+ * - 没有 %nl%(只有 %prompt%):把 nl 放进 %prompt%,%nl% 置空。
+ * nl 为空(AI 没写)时回落原 tag,避免空提示词出图。
+ */
+export function mossPromptValues(values: ComfyTemplateValues, hasNlSlot: boolean): ComfyTemplateValues {
+  const nl = (values.nl ?? '').trim();
+  if (!nl) return values;
+  return hasNlSlot ? { ...values, prompt: '', nl } : { ...values, prompt: nl, nl: '' };
+}
+
 export async function generateComfyImage(
   conn: ComfyRunConn,
-  values: ComfyTemplateValues,
+  rawValues: ComfyTemplateValues,
   signal?: AbortSignal,
   hooks?: ComfyProgressHooks,
 ): Promise<ComfyImageResult> {
   if (!conn.url.trim()) throw new ComfyUIError('请先填写 ComfyUI 服务地址');
-  if (!values.prompt.trim()) throw new ComfyUIError('正向提示词不能为空');
+  const moss = conn.promptStyle === 'moss';
+  let values = rawValues;
+  if (!values.prompt.trim() && !(moss && values.nl?.trim())) throw new ComfyUIError('正向提示词不能为空');
   // 按方向取渠道配置里的尺寸;解析不出就传空,由 renderWorkflowTemplate 决定是报错还是无视
   // (工作流没用 %width%/%height% 时,尺寸配错了也不该妨碍出图)
   const size = values.width && values.height
@@ -516,6 +530,7 @@ export async function generateComfyImage(
   let workflow: ComfyWorkflow;
   let refs: ReturnType<typeof locatePromptInputs> | null = null;
   if (conn.mode === 'simple') {
+    if (moss) values = mossPromptValues(values, false);
     try {
       workflow = buildSimpleWorkflow(conn.simple, {
         prompt: values.prompt,
@@ -533,6 +548,11 @@ export async function generateComfyImage(
     const template = parseWorkflowTemplate(conn.workflow);
     if (extrasActive(conn.extras)) applyExtras(template, conn.extras);
     refs = locatePromptInputs(template);
+    if (moss) {
+      const found = new Set<string>();
+      collectPlaceholders(template, found);
+      values = mossPromptValues(values, found.has('nl'));
+    }
     workflow = renderWorkflowTemplate(template, { ...values, ...size });
   }
   const attachPreview = (result: ComfyImageResult & { textItem?: unknown }): ComfyImageResult => {

@@ -163,6 +163,85 @@ export async function generateCharTags(
   return out;
 }
 
+/* ============ 【bcy】字段 / 中文外貌 → 英文自然语言外貌 ============ */
+
+const NL_CONVERT_SPEC = `你是角色外貌描述员。为每个角色写一句英文自然语言外貌描述，供 MOSS 等能读懂完整句子的生图模型使用；之后每张图都会原样照抄这一句，所以必须准确、完整、可复用。
+
+要求：
+1. 一句话（最多两句），30~60 个英文单词，以 "A girl" / "A young woman" / "A young man" / "A boy" 等性别与年龄感开头。
+2. 只写固定外貌：发色、发型与长度、刘海、瞳色、体型与身高感、胸部大小（女性有记录时）、标志特征（异色瞳、伤疤、尖耳、角、尾巴等）。
+3. 不写服装、饰品、表情、动作、场景、性格；不写白皙肤色（pale/fair/white skin），只有明显晒黑或深肤色才写。
+4. 给出的 tag 字段每一项都必须写进去，颜色、长度不得改动或省略（long black hair 就写 long black hair）；中文外貌描述里提到的固定特征也要写进去。没有依据的细节不要编。
+5. 有作品名（fandom）时写成 "Kasumi from Blue Archive, a girl with ..." 的形式。
+6. 只返回一个 JSON 对象：{"角色名":"A girl with ..."}，键与输入的角色名完全一致；不要 Markdown 代码块、不要解释。`;
+
+/** 从模型回复中解析 {角色名: 英文外貌句}(宽容:带代码块/前后杂质也能解)。 */
+export function parseConvertedNl(raw: string): Record<string, string> {
+  const cleaned = raw.replace(/<think(?:ing)?\b[\s\S]*?<\/think(?:ing)?>/gi, '');
+  const candidates: string[] = [cleaned.trim()];
+  for (const match of cleaned.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) {
+    candidates.unshift(match[1].trim());
+  }
+  for (const candidate of candidates) {
+    const start = candidate.indexOf('{');
+    const end = candidate.lastIndexOf('}');
+    if (start < 0 || end <= start) continue;
+    try {
+      const value: unknown = JSON.parse(candidate.slice(start, end + 1));
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const out: Record<string, string> = {};
+        for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+          const name = key.trim();
+          const text = sanitizeTagValue(v);
+          if (name && text) out[name] = text;
+        }
+        return out;
+      }
+    } catch {
+      // 试下一个候选
+    }
+  }
+  return {};
+}
+
+/** 一条档案给 AI 看的素材:tag 字段 + 中文外貌(柏宝书 desc)。 */
+export function describeEntryForNl(entry: Pick<CharTagEntry, 'name' | 'fields' | 'raw' | 'desc'>): string {
+  const parts: string[] = [];
+  for (const f of CHAR_TAG_FIELDS) {
+    if (f === 'outfit') continue;
+    const v = entry.fields[f]?.trim();
+    if (v) parts.push(`${CHAR_TAG_FIELD_LABELS[f]}=${v}`);
+  }
+  if (!parts.length && entry.raw?.trim()) parts.push(`tag=${entry.raw.trim()}`);
+  const desc = entry.desc?.trim();
+  return `- ${entry.name}: ${parts.join(', ') || '(无字段)'}${desc ? `；中文外貌：${desc.replace(/[\r\n]+/g, ' ')}` : ''}`;
+}
+
+/**
+ * 【bcy】批量为角色档案生成英文自然语言外貌(角色管理页「AI 补写自然语言外貌」)。
+ * 渠道同自动 tag(指派渠道优先,未指派跟随主 API)。返回 {角色名: nl},只含解析成功的。
+ */
+export async function generateCharNl(
+  entries: Array<Pick<CharTagEntry, 'name' | 'fields' | 'raw' | 'desc'>>,
+  signal?: AbortSignal,
+): Promise<Record<string, string>> {
+  if (!entries.length) return {};
+  const messages: ChatMsg[] = [
+    { role: 'system', content: NL_CONVERT_SPEC },
+    { role: 'user', content: entries.map(describeEntryForNl).join('\n') },
+  ];
+  const channel = getTagGenChannel();
+  const raw = channel
+    ? await requestCompletion(channel, messages, { signal, source: '角色外貌·自然语言' })
+    : await requestViaMainApi(messages, { signal, source: '角色外貌·自然语言' });
+  const parsed = parseConvertedNl(raw);
+  const out: Record<string, string> = {};
+  for (const entry of entries) {
+    if (parsed[entry.name]) out[entry.name] = parsed[entry.name];
+  }
+  return out;
+}
+
 /* ============ 主流程入口 ============ */
 
 /**

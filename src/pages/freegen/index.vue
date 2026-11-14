@@ -39,7 +39,7 @@ let nextShotId = 1;
 let expandController: AbortController | null = null;
 
 const status = computed(() => backendStatus());
-const nlOn = computed(() => (settings.defaultBackend === 'comfyui' ? activeComfyPreset().naturalLanguage : settings.nai.naturalLanguage));
+const nlOn = computed(() => (settings.defaultBackend === 'comfyui' ? activeComfyPreset().naturalLanguage || activeComfyPreset().promptStyle === 'moss' : settings.nai.naturalLanguage));
 const negativeOn = computed(() => freeGenNegativeOn());
 const defaultFolder = computed(() => getContext()?.name2?.trim() || '自由生图');
 const busy = computed(() => state.expanding || state.shots.some(s => s.status === 'running'));

@@ -337,8 +337,14 @@ const loraModeText = computed(() => {
 /** 出图前预计:插件侧拼接(触发词 + 前缀 / 主提示词 / 后缀)。主提示词用最近一张图的 AI 输出代入。 */
 const predicted = computed(() => {
   const last = records.find(r => r.kind === 'image');
+  // 【bcy】MOSS 纯自然语言:只发 nl(nl 为空时回落 tag)
+  const moss = active.value.promptStyle === 'moss';
   const main = last && last.kind === 'image'
-    ? [last.nl, last.prompt].filter(Boolean).join('\n')
+    ? moss
+      ? last.nl || last.prompt
+      : [last.nl, last.prompt].filter(Boolean).join('\n')
+    : moss
+    ? '（这里是 AI 写的自然语言画面描述）'
     : '（这里是 AI 写的自然语言 + 标签）';
   return [headText(extras.value), main, tailText(extras.value)].filter(Boolean).join('\n');
 });

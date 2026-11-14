@@ -22,6 +22,7 @@ function prompts(overrides: Partial<AutoTagPrompts> = {}): AutoTagPrompts {
     naiV5Spec: '',
     comfySpec: '',
     comfyThinking: '',
+    mossSpec: '',
     naiThinking: '',
     naiV5Thinking: '',
     ...overrides,
@@ -1214,6 +1215,11 @@ describe('NAI「生成自然语言」开关与渠道画幅锁', () => {
       state.preset.naturalLanguage = false;
       state.preset.orientationLock = 'auto';
       expect(autoTagProfile()).toEqual({ naiCharPrompts: false, nl: false, lockedSize: null });
+
+      // 【bcy】MOSS 纯自然语言:nl 强制开启,不看「生成自然语言」开关
+      state.preset.promptStyle = 'moss';
+      expect(autoTagProfile()).toEqual({ naiCharPrompts: false, nl: true, lockedSize: null, nlOnly: true });
+      state.preset.promptStyle = 'tag';
     } finally {
       state.restore();
     }
