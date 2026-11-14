@@ -11,9 +11,9 @@ describe('faceless', () => {
   });
 
   it('replaces nl phrases as whole words, longest first, keeping case', () => {
-    const [out, hit] = applyNlRules('A man and the young man look at a manly statue; his face hidden.', on().rules);
+    const [out, hit] = applyNlRules('Man and the tall young man look at a manly statue beside a woman; his face hidden. A faceless man waits.', on().rules);
     expect(hit).toBe(true);
-    expect(out).toBe('A faceless man and the faceless young man look at a manly statue; his blank featureless face hidden.');
+    expect(out).toBe('Faceless man and the tall young faceless man look at a manly statue beside a woman; his blank featureless face hidden. A faceless man waits.');
   });
 
   it('leaves images without men untouched', () => {

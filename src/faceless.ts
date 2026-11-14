@@ -42,12 +42,10 @@ const DEFAULT_RULES: Array<Omit<FacelessRule, 'id' | 'enabled'>> = [
   { scope: 'tag', find: '2boys', replace: '2boys, faceless male' },
   { scope: 'tag', find: 'multiple boys', replace: 'multiple boys, faceless male' },
   { scope: 'tag', find: 'male focus', replace: '' },
-  { scope: 'nl', find: 'a man', replace: 'a faceless man' },
-  { scope: 'nl', find: 'the man', replace: 'the faceless man' },
-  { scope: 'nl', find: 'a young man', replace: 'a faceless young man' },
-  { scope: 'nl', find: 'the young man', replace: 'the faceless young man' },
-  { scope: 'nl', find: 'a boy', replace: 'a faceless boy' },
-  { scope: 'nl', find: 'the boy', replace: 'the faceless boy' },
+  // 只匹配整词 man/boy:the tall young man、a man in a dark coat 都能命中,woman/boyfriend 不会
+  { scope: 'nl', find: 'man', replace: 'faceless man' },
+  { scope: 'nl', find: 'boy', replace: 'faceless boy' },
+  { scope: 'nl', find: 'men', replace: 'faceless men' },
   { scope: 'nl', find: 'his face', replace: 'his blank featureless face' },
 ];
 
@@ -147,6 +145,8 @@ export function applyNlRules(text: string, rules: FacelessRule[]): [string, bool
     });
   }
   if (!hit) return [text, false];
+  // 原文已写 faceless man 时不叠成 faceless faceless man
+  out = out.replace(/\b(faceless|featureless)(\s+\1\b)+/gi, '$1');
   return [out.replace(/ {2,}/g, ' ').replace(/\s+([,.;:!?])/g, '$1').trim(), true];
 }
 
