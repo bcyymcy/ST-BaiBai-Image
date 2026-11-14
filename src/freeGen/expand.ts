@@ -91,7 +91,7 @@ export function buildFreeGenMessages(
   }
   if (profile.nlOnly) {
     sample.tag = '1girl, 1boy, cowboy shot';
-    sample.nl = 'A cowboy shot in a vertical frame of two people, a girl and a young man, lying together on a bed in a dim bedroom... (full appearance, poses, expressions, clothing, light and background)';
+    sample.nl = 'A cowboy shot of two people lying side by side on a bed in a dim bedroom: the girl rests her head on the young man’s chest while his arm holds her shoulders... (first the pose, then one appearance sentence each, one key detail, expressions, clothing, light and background; 120-200 words)';
   }
   if (negativeOn) sample.negative = 'standing, outdoors';
   sample.size = profile.lockedSize ?? 'portrait';

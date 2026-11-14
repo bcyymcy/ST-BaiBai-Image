@@ -19,7 +19,7 @@ import {
 import type { BookMemoryContext } from '@/autoTag/bookMemory';
 import { isAiStoryMessage, isStoryMessage, type STContext } from '@/st/context';
 import type { AutoTagSettings } from '@/state/settings';
-import { DEFAULT_MOSS_SPEC, MOSS_THINKING_NOTE } from '@/autoTag/mossSpec';
+import { DEFAULT_MOSS_SPEC, MOSS_FACELESS_NOTE, MOSS_THINKING_NOTE } from '@/autoTag/mossSpec';
 import {
   activeComfyPreset,
   activeOrientationLock,
@@ -98,7 +98,8 @@ export function backendPromptSpec(
 ): string {
   if (settings.defaultBackend === 'comfyui' && nlOnly) {
     // 【bcy】MOSS 纯自然语言:独立一份规范,不走 {{nl}} 宏(nl 恒开)
-    return expandNlSections((options.prompts?.mossSpec ?? '').trim() || DEFAULT_MOSS_SPEC, true).trim();
+    const spec = expandNlSections((options.prompts?.mossSpec ?? '').trim() || DEFAULT_MOSS_SPEC, true).trim();
+    return settings.faceless?.enabled ? `${spec}\n\n${MOSS_FACELESS_NOTE}` : spec;
   }
   if (settings.defaultBackend === 'comfyui') {
     const template = expandNlSections((options.prompts?.comfySpec ?? '').trim() || DEFAULT_COMFY_SPEC, nlOn);
@@ -253,8 +254,8 @@ export async function buildAutoTagMessages(
   if (nlOnly) {
     sampleImage.tag = '1girl, upper body, 小雪';
     sampleImage.nl = library
-      ? 'An upper-body shot in a vertical frame of one girl filling most of the image. The girl has long silver hair and red eyes... (copy her library appearance verbatim, then pose, expression, outfit, light and background)'
-      : 'An upper-body shot in a vertical frame of one girl filling most of the image. The girl has short black hair and blue eyes... (then pose, expression, outfit, light and background)';
+      ? 'An upper-body shot of one girl sitting at a classroom desk, resting her chin on her hand. The girl has long silver hair and red eyes... (first the pose, then her library appearance copied verbatim, one key detail, expression, outfit, light and background; 120-200 words)'
+      : 'An upper-body shot of one girl sitting at a classroom desk, resting her chin on her hand. The girl has short black hair and blue eyes... (first the pose, then appearance, one key detail, expression, outfit, light and background; 120-200 words)';
   }
   if (negativeOn) sampleImage.negative = 'extra people, duplicate character';
   sampleImage.size = profile.lockedSize ?? 'portrait';
