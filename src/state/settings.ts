@@ -1,4 +1,5 @@
 import { extrasDefaults, normalizeExtras, type ComfyExtras } from '@/backends/comfyExtras';
+import { facelessDefaults, normalizeFaceless, type FacelessSettings } from '@/faceless';
 import {
   normalizeSimpleConfig,
   simpleDefaults,
@@ -1047,6 +1048,8 @@ export interface ImageSettings {
   excludes: ExcludesSettings;
   /** 落盘存储行为(新图格式)。 */
   storage: StoragePrefs;
+  /** 【bcy】男性无脸:出图前查找替换。 */
+  faceless: FacelessSettings;
 }
 
 // extension_settings 里的命名空间键。
@@ -1213,6 +1216,7 @@ function defaults(): ImageSettings {
     },
     excludes: excludesDefaults(),
     storage: { saveAsJpeg: true },
+    faceless: facelessDefaults(),
   };
 }
 
@@ -1832,6 +1836,7 @@ function normalize(raw: unknown): ImageSettings {
   merged.storage = {
     saveAsJpeg: typeof rs.saveAsJpeg === 'boolean' ? rs.saveAsJpeg : d.storage.saveAsJpeg,
   };
+  merged.faceless = normalizeFaceless((r as { faceless?: unknown }).faceless);
   return merged;
 }
 
@@ -1861,6 +1866,7 @@ function applyInto(target: ImageSettings, src: ImageSettings): void {
   target.autoTag = src.autoTag;
   target.excludes = src.excludes;
   target.storage = src.storage;
+  target.faceless = src.faceless;
 }
 
 /* —— 渠道共享存储:与柏宝书等「柏宝」插件共用同一份渠道列表 ——

@@ -28,6 +28,7 @@ import { generateComfyImage, randomSeed, type ComfyImageResult } from '@/backend
 import { generateNaiImage, naiRandomSeed, naiSupportsCharacterPrompts } from '@/backends/nai';
 import { effectiveOrientation, parseSize, pickSize, type Orientation } from '@/backends/size';
 import { acquireNaiSlot } from '@/floor/genQueue';
+import { applyFaceless } from '@/faceless';
 import type { GenerationMeta } from '@/generationMeta';
 import { activeComfyPreset, activeNaiEndpoint, activeOrientationLock, effectiveComfyConn, effectiveNai, settings, type BackendId } from '@/state/settings';
 
@@ -171,10 +172,12 @@ export function decideSeed(backend: BackendId, override?: number): number {
  * 漏一格就永久少一格并发。
  */
 export async function generateImage(
-  input: GenerateInput,
+  rawInput: GenerateInput,
   signal?: AbortSignal,
   progress: GenerateProgress = {},
 ): Promise<GenerateOutput> {
+  // 【bcy】男性无脸:只改发出去的内容,楼层里存的 tag 不动
+  const input = applyFaceless(rawInput, settings.faceless).value;
   const status = backendStatus();
   // 兜底:卡片侧已用 configured 拦在按钮上,公开接口侧也会先报 not_configured。
   // 真漏到这里说明上游判据漂了,宁可明说也别发一个注定 401/404 的请求。

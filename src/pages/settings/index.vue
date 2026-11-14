@@ -23,6 +23,7 @@ import {
   type ImageDisplaySize,
 } from '@/state/settings';
 import { getContext } from '@/st/context';
+import { applyFaceless, defaultFacelessRules, DEFAULT_FACELESS_NEGATIVE, newFacelessRule, type FacelessScope } from '@/faceless';
 import {
   ORB_SHAPES,
   THEMES,
@@ -33,6 +34,31 @@ import {
 } from '@/state/ui';
 import { checkForUpdate, performUpdate, updateState } from '@/update';
 import { computed, nextTick, onMounted, ref } from 'vue';
+
+/* —— 【bcy】男性无脸:查找替换规则 —— */
+const faceless = computed(() => settings.faceless);
+const facelessTestText = ref('1girl, 1boy, hetero, bedroom\nA man holds her hand while she smiles at him.');
+const facelessTestResult = computed(() => {
+  const [prompt, ...rest] = facelessTestText.value.split('\n');
+  const out = applyFaceless(
+    { prompt: prompt ?? '', nl: rest.join('\n'), negative: '' },
+    { ...settings.faceless, enabled: true },
+  );
+  if (!out.hit) return '没有命中任何规则（这张图不会被改动）';
+  return [out.value.prompt, out.value.nl, out.value.negative ? `负面追加：${out.value.negative}` : '']
+    .filter(Boolean)
+    .join('\n');
+});
+function addFacelessRule(scope: FacelessScope): void {
+  settings.faceless.rules.push(newFacelessRule(scope));
+}
+function removeFacelessRule(id: string): void {
+  settings.faceless.rules = settings.faceless.rules.filter(r => r.id !== id);
+}
+function resetFaceless(): void {
+  settings.faceless.rules = defaultFacelessRules();
+  settings.faceless.negative = DEFAULT_FACELESS_NEGATIVE;
+}
 
 const NAV_OPTIONS: { value: NavPosition; label: string }[] = [
   { value: 'auto', label: '自动' },
@@ -851,6 +877,58 @@ async function confirmUpdate() {
         <p v-else class="bbi-field-hint">暂无自定义标签。仅内置清洗(思维链、注释、物品旁注等)生效。</p>
       </Collapsible>
 
+      <!-- 【bcy】男性无脸 -->
+      <Collapsible title="男性无脸" :open="false">
+        <label class="bbi-switch-row">
+          <span class="bbi-field-label">出图前把男性替换成无脸</span>
+          <input v-model="faceless.enabled" type="checkbox" class="bbi-checkbox" />
+        </label>
+        <p class="bbi-field-hint">
+          每次出图前按下面的规则查找替换，再发给出图后端；楼层里存的 tag 不改，关掉后重画就恢复原样。
+          画面里没有男人时什么都不动。
+        </p>
+        <div class="fl-group">
+          <div class="fl-head">
+            <span class="bbi-field-label">标签规则（整条 tag 完全相同才替换）</span>
+            <button class="bbi-btn bbi-btn-sm" type="button" @click="addFacelessRule('tag')">添加</button>
+          </div>
+          <div v-for="rule in faceless.rules.filter(r => r.scope === 'tag')" :key="rule.id" class="fl-rule">
+            <input v-model="rule.enabled" type="checkbox" class="bbi-checkbox" title="启用" />
+            <input v-model="rule.find" class="bbi-input" type="text" placeholder="查找，如 1boy" spellcheck="false" />
+            <span class="fl-arrow">→</span>
+            <input v-model="rule.replace" class="bbi-input" type="text" placeholder="替换成（空=删掉）" spellcheck="false" />
+            <button class="bbi-btn bbi-btn-sm" type="button" title="删除" @click="removeFacelessRule(rule.id)">✕</button>
+          </div>
+        </div>
+        <div class="fl-group">
+          <div class="fl-head">
+            <span class="bbi-field-label">描述规则（自然语言里整词查找）</span>
+            <button class="bbi-btn bbi-btn-sm" type="button" @click="addFacelessRule('nl')">添加</button>
+          </div>
+          <div v-for="rule in faceless.rules.filter(r => r.scope === 'nl')" :key="rule.id" class="fl-rule">
+            <input v-model="rule.enabled" type="checkbox" class="bbi-checkbox" title="启用" />
+            <input v-model="rule.find" class="bbi-input" type="text" placeholder="查找，如 a man" spellcheck="false" />
+            <span class="fl-arrow">→</span>
+            <input v-model="rule.replace" class="bbi-input" type="text" placeholder="替换成（空=删掉）" spellcheck="false" />
+            <button class="bbi-btn bbi-btn-sm" type="button" title="删除" @click="removeFacelessRule(rule.id)">✕</button>
+          </div>
+        </div>
+        <div class="fl-group">
+          <span class="bbi-field-label">命中时追加的负面词</span>
+          <input v-model="faceless.negative" class="bbi-input" type="text" spellcheck="false" />
+          <p class="bbi-field-hint">ComfyUI 需要工作流里有 %negative_prompt% 才会生效。</p>
+        </div>
+        <div class="fl-group">
+          <span class="bbi-field-label">试一试（第一行当标签，后面当描述）</span>
+          <textarea v-model="facelessTestText" class="bbi-input fl-test" rows="3" spellcheck="false" />
+          <pre class="fl-result">{{ facelessTestResult }}</pre>
+        </div>
+        <div class="fl-head">
+          <span />
+          <button class="bbi-btn bbi-btn-sm" type="button" @click="resetFaceless">恢复默认规则</button>
+        </div>
+      </Collapsible>
+
       <!-- 自定义提示词(与柏宝书同款入口,独立成区) -->
       <Collapsible title="自定义提示词" :open="false">
         <ul class="bbi-prompt-list">
@@ -1156,6 +1234,43 @@ async function confirmUpdate() {
 </template>
 
 <style scoped>
+.fl-group {
+  display: grid;
+  gap: 6px;
+  padding: 8px 0;
+}
+.fl-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.fl-rule {
+  display: grid;
+  grid-template-columns: auto 1fr auto 1fr auto;
+  align-items: center;
+  gap: 6px;
+}
+.fl-rule .bbi-input {
+  min-width: 0;
+}
+.fl-arrow {
+  opacity: 0.6;
+}
+.fl-test {
+  width: 100%;
+  resize: vertical;
+  font-family: inherit;
+}
+.fl-result {
+  margin: 0;
+  padding: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  border-radius: 6px;
+  background: var(--bbi-bg-soft, rgba(127, 127, 127, 0.1));
+}
 .bbi-ver-row {
   display: inline-flex;
   align-items: center;
