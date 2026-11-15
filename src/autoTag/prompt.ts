@@ -20,6 +20,7 @@ import type { BookMemoryContext } from '@/autoTag/bookMemory';
 import { isAiStoryMessage, isStoryMessage, type STContext } from '@/st/context';
 import type { AutoTagSettings } from '@/state/settings';
 import { DEFAULT_MOSS_SPEC, MOSS_FACELESS_NOTE, MOSS_THINKING_NOTE } from '@/autoTag/mossSpec';
+import { reviewPrompt } from '@/autoTag/reviewPrompt';
 import {
   activeComfyPreset,
   activeOrientationLock,
@@ -364,6 +365,9 @@ ${characterRule}
   const thinking = backendThinkingPrompt(options, nlOn, naiCharPromptsOn);
   if (thinking) messages.push({ role: 'system', content: thinking });
   if (thinking && nlOnly) messages.push({ role: 'system', content: MOSS_THINKING_NOTE });
+  // 【bcy】成稿前自查:同一次输出里先查冲突(barefoot + stockings 之类)再交稿
+  const review = reviewPrompt(options);
+  if (review) messages.push({ role: 'system', content: review });
   const libraryBlock = library?.trim() || `【角色固定外貌库】[system-maintained; currently empty]\n（当前为空，没有任何角色已建档。世界书、角色卡、柏宝书和正文只提供建档依据；未列在本区块中的正式角色必须通过 field:"new" 建档。）`;
   const taskBlock = taskNote?.trim() ? `${taskNote.trim()}\n\n` : '';
   const userContent = `${memoryText}\n\n${libraryBlock}\n\n${taskBlock}${previous ? `${previous}\n\n` : ''}--- 目标正文｜${roleLabel(context, targetFloor)} ---\n${preparedTarget.promptText}`;

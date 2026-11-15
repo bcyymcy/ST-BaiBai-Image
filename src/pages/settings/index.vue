@@ -24,6 +24,7 @@ import {
 } from '@/state/settings';
 import { getContext } from '@/st/context';
 import { DEFAULT_MOSS_SPEC } from '@/autoTag/mossSpec';
+import { DEFAULT_REVIEW_PROMPT } from '@/autoTag/reviewPrompt';
 import { applyFaceless, defaultFacelessRules, DEFAULT_FACELESS_NEGATIVE, newFacelessRule, type FacelessScope } from '@/faceless';
 import {
   ORB_SHAPES,
@@ -222,6 +223,13 @@ const TAG_PROMPT_METAS: TagPromptMeta[] = [
     label: 'MOSS 规范（纯自然语言）',
     hint: '【bcy】ComfyUI 当前工作流的「提示词风格」选了「纯自然语言（MOSS 等）」时，用它代替「ComfyUI 规范」：AI 只写一段详细英文画面描述，角色外貌照抄角色库的自然语言外貌。思维链仍用「ComfyUI 思维链」。留空用内置默认。',
     builtin: DEFAULT_MOSS_SPEC,
+    macros: [],
+  },
+  {
+    key: 'review',
+    label: '成稿前自查（审核）',
+    hint: '【bcy】拼在自动 tag 和自由生图的请求里，让 AI 写完提示词后在同一次输出里先查冲突（如 barefoot 和丝袜同时出现、闭眼却看镜头、站坐躺同时写）再交稿，不额外发请求。可在「自动生成 tag」里关闭。留空用内置默认。',
+    builtin: DEFAULT_REVIEW_PROMPT,
     macros: [],
   },
 ];
@@ -779,6 +787,12 @@ async function confirmUpdate() {
           />
         </label>
         <p class="bbi-field-hint">副 API 请求失败或返回无法解析时自动重试；0 = 不重试，最多 5 次。</p>
+
+        <label class="bbi-switch-row">
+          <span class="bbi-field-label">成稿前自查（审核）</span>
+          <input v-model="settings.autoTag.selfReview" type="checkbox" class="bbi-checkbox" />
+        </label>
+        <p class="bbi-field-hint">AI 写完提示词后在同一次回复里先检查冲突（裸足配丝袜、闭眼看镜头、站坐躺同时写、人数不符等）并改正再交稿，不额外请求。清单可在「自定义提示词 → 成稿前自查」里改。</p>
       </Collapsible>
 
       <!-- 排除角色:名单与柏宝书共享(见 state/settings.ts 的共享存储),任一端改动自动同步 -->

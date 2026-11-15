@@ -478,6 +478,8 @@ export interface AutoTagSettings {
   retryCount: number;
   /** 写入 tag 后是否立即调用出图渠道自动生成图片(默认开;关闭则卡片上手动点「生成」)。 */
   autoGenerate: boolean;
+  /** 【bcy】写提示词时让 AI 在同一次输出里先做「成稿前自查」(服装/表情/姿势/人数等冲突),默认开。 */
+  selfReview: boolean;
   /** 可编辑提示词集(破限/后端规范/思维链);空串 = 回落内置默认。 */
   prompts: AutoTagPrompts;
 }
@@ -1033,6 +1035,8 @@ export interface AutoTagPrompts {
   comfyThinking: string;
   /** 【bcy】MOSS 纯自然语言风格的规范;留空回落内置默认(DEFAULT_MOSS_SPEC)。 */
   mossSpec: string;
+  /** 【bcy】成稿前自查清单;留空回落内置默认(DEFAULT_REVIEW_PROMPT)。 */
+  review: string;
   /** 【已下线,无 UI 入口】NAI 4 系及以下的思考清单;回落 DEFAULT_NAI_THINKING。 */
   naiThinking: string;
   /** NAI 思维链(4.5/V5);留空回落内置默认(DEFAULT_NAI_V5_THINKING)。
@@ -1218,6 +1222,7 @@ function defaults(): ImageSettings {
       maxImages: 2,
       retryCount: 1,
       autoGenerate: true,
+      selfReview: true,
       prompts: {
         jailbreak: '',
         naiSpec: '',
@@ -1225,6 +1230,7 @@ function defaults(): ImageSettings {
         comfySpec: '',
         comfyThinking: '',
         mossSpec: '',
+        review: '',
         naiThinking: '',
         naiV5Thinking: '',
       },
@@ -1824,6 +1830,7 @@ function normalize(raw: unknown): ImageSettings {
         : d.autoTag.retryCount,
     autoGenerate:
       typeof rt.autoGenerate === 'boolean' ? rt.autoGenerate : d.autoTag.autoGenerate,
+    selfReview: typeof rt.selfReview === 'boolean' ? rt.selfReview : d.autoTag.selfReview,
     // 可编辑提示词集:逐字段兜底;旧版 jailbreakPrompt 字段迁移进 prompts.jailbreak
     prompts: (() => {
       const rp = (rt.prompts ?? {}) as Partial<AutoTagPrompts>;
@@ -1843,6 +1850,7 @@ function normalize(raw: unknown): ImageSettings {
         comfySpec: typeof rp.comfySpec === 'string' ? rp.comfySpec : '',
         comfyThinking: typeof rp.comfyThinking === 'string' ? rp.comfyThinking : legacyThinking,
         mossSpec: typeof rp.mossSpec === 'string' ? rp.mossSpec : '',
+        review: typeof rp.review === 'string' ? rp.review : '',
         naiThinking: typeof rp.naiThinking === 'string' ? rp.naiThinking : legacyThinking,
         naiV5Thinking: typeof rp.naiV5Thinking === 'string' ? rp.naiV5Thinking : '',
       };

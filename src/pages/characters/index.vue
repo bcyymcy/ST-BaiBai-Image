@@ -3,7 +3,9 @@ import BbiTextarea from '@/components/BbiTextarea.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import Icon from '@/components/Icon.vue';
 import ModalMask from '@/components/ModalMask.vue';
-import { generateCharNl, generateCharTags, isNonEnglishNl, isPoorNl } from '@/autoTag/charAnchors';
+import { fixCharAppearance, generateCharNl, generateCharTags, isNonEnglishNl, isPoorNl, type CharFixResult } from '@/autoTag/charAnchors';
+import { fetchCharCard, fetchUserPersona } from '@/autoTag/context';
+import { translatePrompt } from '@/api/translate';
 import { readBookMemory } from '@/autoTag/bookMemory';
 import {
   CHAR_TAG_FIELDS,
@@ -178,6 +180,10 @@ function closeEntry() {
   draft.value = null;
   regenerating.value = false;
   historyOpen.value = false;
+  fixOpen.value = false;
+  fixResult.value = null;
+  fixNote.value = '';
+  nlZh.value = '';
 }
 
 /** 手动编辑过的字段 → 条目归手动(但仍可被 AI 变更接管) */
@@ -273,6 +279,94 @@ async function writeDraftNl() {
     toastr.error(error instanceof Error ? error.message : String(error), '柏宝绘');
   } finally {
     writingNl.value = false;
+  }
+}
+
+/* —— 【bcy】AI 修正外貌:对照角色卡/柏宝书/用户意见改字段与自然语言外貌,先预览再采用 —— */
+const fixOpen = ref(false);
+const fixNote = ref('');
+const fixing = ref(false);
+const fixResult = ref<CharFixResult | null>(null);
+const fixDiff = computed(() => {
+  const d = draft.value;
+  const r = fixResult.value;
+  if (!d || !r) return [] as Array<{ label: string; from: string; to: string }>;
+  const rows = CHAR_TAG_FIELDS.filter(f => (d.fields[f] ?? '').trim() !== (r.fields[f] ?? '').trim()).map(f => ({
+    label: CHAR_TAG_FIELD_LABELS[f],
+    from: d.fields[f] ?? '',
+    to: r.fields[f] ?? '',
+  }));
+  if (r.nl && r.nl.trim() !== d.nl.trim()) rows.push({ label: '自然语言外貌', from: d.nl, to: r.nl });
+  return rows;
+});
+function toggleFix() {
+  fixOpen.value = !fixOpen.value;
+  fixResult.value = null;
+}
+async function runFix() {
+  const d = draft.value;
+  if (!d) return;
+  const name = d.name.trim();
+  if (!name) {
+    toastr.warning('先填写角色名', '柏宝绘');
+    return;
+  }
+  fixing.value = true;
+  fixResult.value = null;
+  try {
+    const ctx = getContext();
+    const card = ctx ? fetchCharCard(ctx) : '';
+    const persona = ctx ? fetchUserPersona(ctx) : '';
+    const cardText = [card ? `【角色卡】\n${card}` : '', persona ? `【玩家人设】\n${persona}` : ''].filter(Boolean).join('\n\n');
+    fixResult.value = await fixCharAppearance(
+      { name, fields: d.fields, nl: d.nl, desc: draftDesc.value },
+      { cardText, note: fixNote.value },
+    );
+    if (!fixDiff.value.length) toastr.info('AI 认为当前外貌没有需要修正的地方', '柏宝绘');
+  } catch (error) {
+    toastr.error(error instanceof Error ? error.message : String(error), '柏宝绘');
+  } finally {
+    fixing.value = false;
+  }
+}
+function applyFix() {
+  const d = draft.value;
+  const r = fixResult.value;
+  if (!d || !r) return;
+  for (const f of CHAR_TAG_FIELDS) d.fields[f] = r.fields[f] ?? '';
+  if (r.nl) d.nl = r.nl;
+  markManual();
+  fixResult.value = null;
+  fixOpen.value = false;
+  fixNote.value = '';
+  nlZh.value = '';
+  toastr.success('已填入修正结果,检查后点「完成」保存', '柏宝绘');
+}
+
+/* —— 【bcy】自然语言外貌翻译:译成中文只做对照显示;翻成英文替换原文 —— */
+const nlZh = ref('');
+const translatingNl = ref(false);
+async function translateNl(direction: 'toZh' | 'toEn') {
+  const d = draft.value;
+  if (!d) return;
+  const text = d.nl.trim();
+  if (!text) {
+    toastr.warning('自然语言外貌是空的', '柏宝绘');
+    return;
+  }
+  translatingNl.value = true;
+  try {
+    const out = await translatePrompt(text, direction);
+    if (direction === 'toZh') nlZh.value = out;
+    else {
+      d.nl = out;
+      nlZh.value = '';
+      markManual();
+    }
+  } catch (error) {
+    toastr.error(error instanceof Error ? error.message : String(error), '柏宝绘');
+  } finally {
+    translatingNl.value = false;
   }
 }
 
@@ -610,7 +704,7 @@ function sourceLabel(entry: CharTagEntry): string {
         </label>
 
         <label class="bbi-modal-field">
-          <span class="bbi-modal-label">
+          <span class="bbi-modal-label" style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center">
             自然语言外貌(MOSS 纯自然语言模式照抄这一句)
             <button
               class="bbi-btn bbi-btn-sm"
@@ -620,6 +714,32 @@ function sourceLabel(entry: CharTagEntry): string {
               @click.prevent="writeDraftNl"
             >
               {{ writingNl ? '写作中…' : 'AI 写' }}
+            </button>
+            <button
+              class="bbi-btn bbi-btn-sm"
+              type="button"
+              title="外貌写错了?对照角色卡、柏宝书和你的修正意见,让 AI 同时修正外貌字段和自然语言外貌"
+              @click.prevent="toggleFix"
+            >
+              AI 修正
+            </button>
+            <button
+              class="bbi-btn bbi-btn-sm"
+              type="button"
+              title="在下面显示中文译文,只给你看,不替换英文原文"
+              :disabled="translatingNl"
+              @click.prevent="translateNl('toZh')"
+            >
+              译成中文
+            </button>
+            <button
+              class="bbi-btn bbi-btn-sm"
+              type="button"
+              title="把框里的内容(比如你用中文写的外貌)翻成英文并替换"
+              :disabled="translatingNl"
+              @click.prevent="translateNl('toEn')"
+            >
+              翻成英文
             </button>
           </span>
           <BbiTextarea
@@ -631,6 +751,42 @@ function sourceLabel(entry: CharTagEntry): string {
             @input="markManual"
           />
         </label>
+        <p v-if="nlZh" class="bbi-field-hint fx-zh">中文对照：{{ nlZh }}</p>
+
+        <!-- 【bcy】AI 修正面板:先写意见 → AI 给出修改前/后 → 采用才填进草稿 -->
+        <div v-if="fixOpen" class="fx-box">
+          <span class="bbi-field-label">AI 修正外貌</span>
+          <BbiTextarea
+            v-model="fixNote"
+            :rows="2"
+            :max-rows="5"
+            placeholder="哪里不对?例如:头发是银白色及腰长发,不是浅棕;眼睛是红色。不填则让 AI 自己对照角色卡和柏宝书检查。"
+          />
+          <div class="fx-actions">
+            <button class="bbi-btn bbi-btn-primary bbi-btn-sm" type="button" :disabled="fixing" @click="runFix">
+              {{ fixing ? '修正中…' : '开始修正' }}
+            </button>
+            <button class="bbi-btn bbi-btn-sm" type="button" @click="toggleFix">取消</button>
+          </div>
+          <template v-if="fixResult">
+            <p v-if="!fixDiff.length" class="bbi-field-hint">AI 认为当前外貌没有需要修正的地方。</p>
+            <ul v-else class="fx-diff">
+              <li v-for="row in fixDiff" :key="row.label">
+                <span class="fx-label">{{ row.label }}</span>
+                <span class="fx-from">{{ row.from || '(空)' }}</span>
+                <span class="fx-arrow">→</span>
+                <span class="fx-to">{{ row.to || '(空)' }}</span>
+              </li>
+            </ul>
+            <ul v-if="fixResult.changes.length" class="fx-reasons">
+              <li v-for="(c, i) in fixResult.changes" :key="i">{{ c }}</li>
+            </ul>
+            <div v-if="fixDiff.length" class="fx-actions">
+              <button class="bbi-btn bbi-btn-primary bbi-btn-sm" type="button" @click="applyFix">采用</button>
+              <button class="bbi-btn bbi-btn-sm" type="button" @click="fixResult = null">放弃</button>
+            </div>
+          </template>
+        </div>
 
         <div class="bbi-char-preview">
           <span class="bbi-field-label">最终 tag 预览</span>
@@ -1149,5 +1305,54 @@ function sourceLabel(entry: CharTagEntry): string {
   .bbi-char-name {
     font-size: 14px;
   }
+}
+
+/* 【bcy】AI 修正 / 翻译 */
+.fx-zh {
+  margin-top: -4px;
+}
+.fx-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--bbi-border, rgba(128, 128, 128, 0.35));
+  border-radius: 8px;
+}
+.fx-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.fx-diff,
+.fx-reasons {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+.fx-diff li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  align-items: baseline;
+  word-break: break-word;
+}
+.fx-label {
+  font-weight: 600;
+  min-width: 4em;
+}
+.fx-from {
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+.fx-to {
+  color: var(--bbi-accent, #4caf50);
+}
+.fx-reasons li::before {
+  content: '· ';
 }
 </style>

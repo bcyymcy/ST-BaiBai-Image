@@ -274,6 +274,95 @@ export async function generateCharNl(
   return out;
 }
 
+/* ============ 【bcy】AI 修正角色外貌(字段 + 自然语言外貌一起改) ============ */
+
+const FIX_SPEC = `You are fixing a character's appearance record for an AI image generator. The current record may contain mistakes (wrong hair or eye color, wrong length, missing or invented features).
+
+Sources, in order of authority:
+1. The user's correction notes (if any) — always follow them.
+2. The character card / Chinese appearance notes — the canonical description of the character.
+3. The current record — keep everything that does not contradict the sources above.
+
+Output rules:
+- Fields are danbooru-style English tags, comma separated, permanent appearance only:
+  fandom (source work, empty for original characters), sex (1girl / 1boy ...), hair (color, length, style, bangs), eyes (color, special features), skin (only if clearly tanned / dark, otherwise empty), body (build, height, breast size), extra (permanent features: horns, tail, pointed ears, scars, mole ...), outfit (the character's default / signature outfit, may be empty).
+- nl is ONE English sentence (two at most, 30-60 words) of permanent appearance, starting with gender and apparent age ("A girl", "A young woman", "A young man"...), consistent with the fields, without clothing, expression, pose, personality, absence statements or evaluative filler. Do not write pale/fair/white skin.
+- Do not invent details that no source supports. Only change what is wrong or missing.
+- changes: a short list in CHINESE describing what you changed and why (e.g. "发色 浅棕 → 银白：角色卡写的是银白色长发"). Empty list if nothing needed fixing.
+- Return ONLY one JSON object, no Markdown:
+{"fields":{"fandom":"","sex":"","hair":"","eyes":"","skin":"","body":"","extra":"","outfit":""},"nl":"A girl with ...","changes":["..."]}`;
+
+export interface CharFixResult {
+  fields: Record<CharTagField, string>;
+  nl: string;
+  changes: string[];
+}
+
+/** 解析 AI 修正结果;字段缺失时保留原值(AI 漏写不等于清空)。 */
+export function parseCharFix(raw: string, current: Record<CharTagField, string>): CharFixResult | null {
+  const cleaned = raw.replace(/<think(?:ing)?\b[\s\S]*?<\/think(?:ing)?>/gi, '');
+  const candidates: string[] = [cleaned.trim()];
+  for (const match of cleaned.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) candidates.unshift(match[1].trim());
+  for (const candidate of candidates) {
+    const start = candidate.indexOf('{');
+    const end = candidate.lastIndexOf('}');
+    if (start < 0 || end <= start) continue;
+    try {
+      const value = JSON.parse(candidate.slice(start, end + 1)) as Record<string, unknown>;
+      if (!value || typeof value !== 'object') continue;
+      const rawFields = (value.fields && typeof value.fields === 'object' ? value.fields : {}) as Record<string, unknown>;
+      const fields = { ...current };
+      for (const f of CHAR_TAG_FIELDS) {
+        if (typeof rawFields[f] === 'string') fields[f] = sanitizeTagValue(rawFields[f]);
+      }
+      const nl = typeof value.nl === 'string' ? value.nl.trim() : '';
+      const changes = Array.isArray(value.changes)
+        ? value.changes.filter((c): c is string => typeof c === 'string' && !!c.trim()).map(c => c.trim())
+        : [];
+      return { fields, nl, changes };
+    } catch {
+      // 试下一个候选
+    }
+  }
+  return null;
+}
+
+/**
+ * 【bcy】按角色卡、柏宝书外貌和用户的修正意见,让 AI 修正一条档案的字段与自然语言外貌。
+ * 只返回建议,由调用方展示「修改前 / 修改后」让用户确认。
+ */
+export async function fixCharAppearance(
+  entry: { name: string; fields: Record<CharTagField, string>; nl: string; desc?: string },
+  extra: { cardText?: string; note?: string },
+  signal?: AbortSignal,
+): Promise<CharFixResult> {
+  const record = CHAR_TAG_FIELDS.map(f => `${f}=${entry.fields[f]?.trim() ?? ''}`).join('\n');
+  const parts = [
+    `Character name: ${entry.name}`,
+    `Current record:\n${record}\nnl=${entry.nl.trim() || '(empty)'}`,
+    entry.desc?.trim() ? `Chinese appearance notes (柏宝书):\n${entry.desc.trim()}` : '',
+    extra.cardText?.trim() ? `Character card:\n${extra.cardText.trim().slice(0, 6000)}` : '',
+    extra.note?.trim() ? `User's correction notes (highest priority):\n${extra.note.trim()}` : 'User gave no notes: check the record against the character card / notes yourself.',
+    'Return the JSON object only.',
+  ].filter(Boolean);
+  const messages: ChatMsg[] = [
+    { role: 'system', content: FIX_SPEC },
+    { role: 'user', content: parts.join('\n\n') },
+  ];
+  const channel = getTagGenChannel();
+  const box: { result: CharFixResult | null } = { result: null };
+  const validate = (raw: string) => {
+    const parsed = parseCharFix(raw, entry.fields);
+    if (!parsed) throw new Error('AI 返回的内容无法解析');
+    if (parsed.nl && isNonEnglishNl(entry.name, parsed.nl)) throw new Error('AI 写的自然语言外貌不是英文');
+    box.result = parsed;
+  };
+  if (channel) await requestCompletion(channel, messages, { signal, source: '角色外貌·AI 修正', validate });
+  else await requestViaMainApi(messages, { signal, source: '角色外貌·AI 修正', validate });
+  if (!box.result) throw new Error('AI 没有返回修正结果');
+  return box.result;
+}
+
 /* ============ 主流程入口 ============ */
 
 /**

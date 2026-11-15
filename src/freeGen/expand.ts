@@ -16,6 +16,7 @@ import {
   fetchUserPersona,
 } from '@/autoTag/context';
 import { autoTagProfile, backendPromptSpec, type AutoTagProfile } from '@/autoTag/prompt';
+import { reviewPrompt } from '@/autoTag/reviewPrompt';
 import { parseJsonObject, type ImageCharacterPrompt } from '@/autoTag/protocol';
 import { templateSupportsNegative } from '@/backends/comfyTemplates';
 import { getWorkflowPlaceholders } from '@/backends/comfyui';
@@ -77,6 +78,8 @@ export function buildFreeGenMessages(
     library: string;
     userName: string;
     charName: string;
+    /** 【bcy】成稿前自查清单,空串 = 不加。 */
+    review?: string;
   },
 ): ChatMsg[] {
   const count = clampCount(options.count);
@@ -123,6 +126,7 @@ ${JSON.stringify({ images: [sample] })}`;
   if (parts.persona) messages.push({ role: 'system', content: buildPersonaSystem(parts.persona) });
   if (parts.spec) messages.push({ role: 'system', content: parts.spec });
   messages.push({ role: 'system', content: contract });
+  if (parts.review?.trim()) messages.push({ role: 'system', content: parts.review.trim() });
   const library = parts.library.trim() ? `${parts.library.trim()}\n\n` : '';
   messages.push({ role: 'user', content: `${library}【画面想法】\n${options.idea.trim()}` });
   return messages;
@@ -190,6 +194,7 @@ export async function expandIdea(options: FreeGenOptions, signal?: AbortSignal):
     library,
     userName: context?.name1?.trim() ?? '',
     charName: context?.name2?.trim() ?? '',
+    review: reviewPrompt(settings.autoTag),
   });
 
   const retries = Math.max(0, Math.floor(Number(settings.autoTag.retryCount) || 0));
