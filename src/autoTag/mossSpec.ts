@@ -27,11 +27,14 @@ nl（JSON 的 nl 键）：一段连贯的英文描述。
      · **姿势有通用名字就必须写出名字**，再用半句白话补方位。日常与亲密场景都一样，例如：
        日常：sitting cross-legged, seiza, hugging her knees, lying on her stomach, leaning against a wall, kneeling on one knee, princess carry, piggyback ride, hug from behind, lap pillow, head pat, holding hands, arm in arm, forehead to forehead
        亲密/成人：missionary position, cowgirl position, reverse cowgirl, doggystyle, spooning, standing sex, lap sitting, straddling
+     · 写了姿势名，就按这个姿势**最常见、最标准的样子**写方位，不自创变体；第一句里只写姿势本身，不在同一句里叠加别的动作（抓、摸、捏等）。
+     · **支撑手不能另作他用**：撑在床上/墙上/对方身上承重的手臂，就不能再写它去抓、摸别处——否则模型只能改姿势去满足手的动作。手部动作只能给没在承重的手。
+     · 成人亲密/性场景：人物一律用 young woman / young man（或 woman / man）称呼，第一句写明 two adults，不用 girl / boy；性行为本身只用半句点到（如 having sex），不展开过程细节。
      · 没有通用名字的姿势，只交代三件事：每个人的身体姿态（站/坐/躺/跪）、身体靠什么支撑（床、椅子、墙、对方的手臂）、两人哪里接触。不写每根手指、每条腿。
-     例：A full-body shot at eye level from the side of two people on a bed in the missionary position: the girl lies on her back with her knees bent and apart, and the young man lies on top of her between her legs, holding himself up on straight arms.
+     例：A full-body shot at eye level from the side of two adults having sex on a bed in the missionary position: the young woman lies on her back with her knees bent and apart, and the young man lies on top of her between her legs, holding himself up on straight arms placed beside her shoulders.
      例：An upper-body shot at eye level of two people in a park: the young man gives the girl a head pat while she looks up at him.
   2. 外貌：每个入画角色一句（照抄角色库，规则见「角色外貌」），用来区分人物，不展开。
-  3. 关键细节：只补 1~2 处最关键的接触点或手部动作，必须与第一句的姿势一致。
+  3. 关键细节：只补 1~2 处最关键的接触点或手部动作，必须与第一句的姿势一致，不能改变谁在承重、谁的身体在哪。
   4. 表情：主角一句，其他人最多半句。
   5. 服装：一句，写主要衣物和关键状态（敞开、褪下、湿透），不逐件描写。
   6. 光影与背景：合起来一句。
@@ -102,4 +105,4 @@ export const MOSS_THINKING_NOTE = `【MOSS 纯自然语言模式补充】
 本次使用 MOSS 纯自然语言风格：模型只会看到 nl。思维链里的槽位照常用英文短词定死取值，但落笔时按后端规范的顺序写：
 - 先定姿势：这一刻每个人的姿态是什么，有没有通用的姿势名（日常或亲密体位都算）；再按姿势选景别（看整体体态的姿势用 full body）和角度（默认平视，看身体关系用侧面）。
 - 第一句写景别 + 角度 + 人数 + 场所 + 姿势名/姿态，再写外貌；槽位里的细节只挑最关键的写，会让姿势变复杂的细节一律删掉。tag 只写人数、景别和角色名。
-- 自查时核对的是 nl：第一句是否写出姿势名或说清姿态、景别是否容纳了定义姿势的身体部位、全段是否只有一个角度和一套方位、入画的人是否都完整、外貌是否照抄角色库。`;
+- 自查时核对的是 nl：第一句是否写出姿势名或说清姿态、承重的手臂有没有被写去做别的事、成人亲密场景是否用 young woman / young man、景别是否容纳了定义姿势的身体部位、全段是否只有一个角度和一套方位、入画的人是否都完整、外貌是否照抄角色库。`;

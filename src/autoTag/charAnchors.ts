@@ -175,13 +175,13 @@ Rules:
 1. One sentence (two at most), 30-60 English words, starting with gender and apparent age, e.g. "A girl", "A young woman", "A young man", "A boy".
 2. Only permanent appearance: hair color, hairstyle and length, bangs, eye color, build and height, breast size (for women, if recorded), distinctive features (heterochromia, scars, pointed ears, horns, tail, etc.).
 3. Do NOT write clothing, accessories, expression, pose, location or personality. Do not write pale/fair/white skin; only mention skin if clearly tanned or dark.
-4. Every given tag field must appear, with its colors and lengths unchanged (long black hair stays "long black hair"). Also include permanent features from the Chinese notes. Do not invent details. Describe only what IS there: never write absence statements ("no scars or marks are noted", "no distinctive features") or meta wording ("main features", "notable traits", "is described as"); simply leave empty fields out.
+4. Every given tag field must appear, with its colors and lengths unchanged (long black hair stays "long black hair"). Also include permanent features from the Chinese notes. Do not invent details. Describe only what IS there: never write absence statements ("no scars or marks are noted", "no distinctive features") or meta wording ("main features", "notable traits", "is described as") or evaluative filler ("creating a distinct and balanced silhouette", "giving her a charming look"); simply leave empty fields out.
 5. If a fandom (source work) is given, write it as "Kasumi from Blue Archive, a girl with ...".
 6. Return ONLY one JSON object: {"<character name>": "A girl with ..."}. Keys must match the input names exactly. No Markdown code block, no explanation.`;
 
 /** 说明腔/否定句式的外貌(main features、no scars ... noted)——模型读了没用,需要重写。 */
 export function isPoorNl(text: string): boolean {
-  return /\b(main|notable|distinctive) (features?|traits?) (are|is)\b|\bno [^.]{0,40}\b(are|is) (noted|recorded|mentioned)\b|\bare her main features\b/i.test(text);
+  return /\b(main|notable|distinctive) (features?|traits?) (are|is)\b|\bno [^.]{0,40}\b(are|is) (noted|recorded|mentioned)\b|\bare her main features\b|\b(creating|giving (her|him)) an? [^.]{0,40}\b(silhouette|look|appearance|impression)\b/i.test(text);
 }
 
 /** 去掉角色名后仍含汉字/假名 = 没按要求写英文。 */
