@@ -254,8 +254,8 @@ export async function buildAutoTagMessages(
   if (nlOnly) {
     sampleImage.tag = '1girl, upper body, 小雪';
     sampleImage.nl = library
-      ? 'An upper-body shot of one girl sitting at a classroom desk, resting her chin on her hand. The girl has long silver hair and red eyes... (first the pose, then her library appearance copied verbatim, one key detail, expression, outfit, light and background; 120-200 words)'
-      : 'An upper-body shot of one girl sitting at a classroom desk, resting her chin on her hand. The girl has short black hair and blue eyes... (first the pose, then appearance, one key detail, expression, outfit, light and background; 120-200 words)';
+      ? 'An upper-body shot at eye level of one girl sitting at a classroom desk, resting her chin on her hand. The girl has long silver hair and red eyes... (first the pose, then her library appearance copied verbatim, one key detail, expression, outfit, light and background; details never complicate the pose)'
+      : 'An upper-body shot at eye level of one girl sitting at a classroom desk, resting her chin on her hand. The girl has short black hair and blue eyes... (first the pose, then appearance, one key detail, expression, outfit, light and background; details never complicate the pose)';
   }
   if (negativeOn) sampleImage.negative = 'extra people, duplicate character';
   sampleImage.size = profile.lockedSize ?? 'portrait';
