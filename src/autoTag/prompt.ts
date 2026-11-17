@@ -255,8 +255,8 @@ export async function buildAutoTagMessages(
   if (nlOnly) {
     sampleImage.tag = '1girl, upper body, 小雪';
     sampleImage.nl = library
-      ? 'An upper-body shot at eye level of one girl sitting at a classroom desk, resting her chin on her hand. The girl has long silver hair and red eyes... (first the pose, then her library appearance copied verbatim, one key detail, expression, outfit, light and background; details never complicate the pose)'
-      : 'An upper-body shot at eye level of one girl sitting at a classroom desk, resting her chin on her hand. The girl has short black hair and blue eyes... (first the pose, then appearance, one key detail, expression, outfit, light and background; details never complicate the pose)';
+      ? '2.5D semi-realistic anime illustration of a girl sitting at a classroom desk by the window, resting her chin on her hand. She has long silver hair and red eyes... (style opening + subject + pose + place first, then appearance as full She has… sentences using the library wording, outfit, hands and props, scene with frame positions, light last)'
+      : '2.5D semi-realistic anime illustration of a girl sitting at a classroom desk by the window, resting her chin on her hand. She has short black hair and blue eyes... (style opening + subject + pose + place first, then appearance as full She has… sentences, outfit, hands and props, scene with frame positions, light last)';
   }
   if (negativeOn) sampleImage.negative = 'extra people, duplicate character';
   sampleImage.size = profile.lockedSize ?? 'portrait';
@@ -299,7 +299,7 @@ export async function buildAutoTagMessages(
   const libraryReferenceRule = naiCharPromptsOn
     ? `- If a visible character exists in the fixed appearance library or is created in this changes array, copy the fixed fields into that character own characters[].tag; keep appearance wording verbatim but convert 1girl/1boy to girl/boy. The fandom identity tag (fields.fandom) goes first, verbatim. Do not put them in Base or assign them to another character.${nlOn ? ' Library natural-language notes may inform that character nl.' : ''} Use the library entry name verbatim for characters[].name and for any name inside ${nlOn ? 'tag/nl' : 'tag'} — never transliterate, translate, or vary it.`
     : nlOnly
-    ? '- 画面中的角色只要已在【角色固定外貌库】，或在本次 changes 中建了档，nl 里介绍他外貌的那一句就必须照抄档案：档案有 nl=（自然语言外貌）时原样写入，用词一字不改，只允许把开头的 A girl 换成 The girl 接上下文；只有字段没有 nl= 时，把每个字段改写进一句英文外貌描述，颜色、长度、发型、瞳色一个都不能漏或改。fandom 字段只作档案记录，nl 里直接写角色英文名和作品名即可。\n   - 同一角色的外貌在一张图里只完整介绍一遍：之后用简短的区分性称谓（the girl with silver hair、the tall man）承接，禁止重复整段外貌。'
+    ? '- 画面中的角色只要已在【角色固定外貌库】，或在本次 changes 中建了档，nl 里介绍他外貌的句子就必须按档案写：档案有 nl=（自然语言外貌）时，发色、长度、发型、瞳色、体型、标志特征的用词一个不改，但要改写成 She has / He has 开头、有谓语的完整句子接进上下文（禁止「The girl with long hair, brown eyes and a slender build.」这种半句）；只有字段没有 nl= 时，把每个字段改写进完整的英文外貌句子，颜色、长度、发型、瞳色一个都不能漏或改。fandom 字段只作档案记录，nl 里直接写角色英文名和作品名即可。\n   - 同一角色的外貌在一张图里只完整介绍一遍：之后用简短的区分性称谓（the girl with silver hair、the tall man）承接，禁止重复整段外貌。'
     : '- 画面中的角色只要已在【角色固定外貌库】，或在本次 changes 中建了档，tag 与 nl 就必须照抄库中/刚建档的字段值，用词一字不改，不得自行改写或增删其固定外貌。fandom 字段只作档案记录，ComfyUI 画图时不照抄它，同人身份 tag 按下发的 ComfyUI 规范现场判定并按规范转义括号。\n   - 同一角色的固定外貌在一张图里只写一遍：同一图内再次提到他时用简短指代（the boy、the silver-haired girl）承接，禁止把整串外貌重复第二遍——重复会让模型以为画面里有多个同样的人，把一个人画成互不相连的几块。';
   // 建档 nl 只在协议含 nl 时要求(runner 的验收同一口径,见 autoTagProfile)
   const newCharacterNlRule = nlOnly
