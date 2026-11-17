@@ -8,12 +8,13 @@
  * bcy.11~15:围绕「姿势画不对」反复收紧,写成了「镜头术语开头 + 外貌半句 + 剧情细节」。
  * bcy.17:对照用户自己手写、单人几乎不出肢体问题的提示词(MOSS 官方推荐的 caption 写法)
  * 整份重写:
- *  - 第一句 = 画风 + 人物 + 姿势 + 地点,像正常句子,不用「A full-body shot at eye level…」开头;
+ *  - 第一句 = 人物 + 姿势 + 地点,像正常句子,不用「A full-body shot at eye level…」开头;
  *  - 外貌写成完整句子(She has…),修掉「The girl with … build.」这种没有谓语的半句;
  *  - 细节写看得见的东西(服装、道具、摆设),用画面方位(左边、右下、背景、前景)交代位置;
  *  - 剧情残留的小痕迹(伤口、结痂、液体痕迹)不是画面重点就不写;
  *  - 光线放最后。
- *  画风开头的短语写在规范里,用户可在「自定义提示词」里改成自己的。
+ * bcy.18:去掉 bcy.17 写死的「2.5D semi-realistic anime illustration」画风开头——
+ *  画风归工作流的触发词/前缀/LoRA 管,规范只管人物、动作、服装、场景、光线。
  */
 
 export const DEFAULT_MOSS_SPEC = `【ComfyUI 提示词规范 · MOSS 纯自然语言】
@@ -26,11 +27,10 @@ tag（JSON 的 tag 键）：只给插件内部记录用，**不会发给模型**
 ━━ nl 怎么写 ━━
 一段（或两三段）连贯的英文描述，像在向画师描述一幅插画：先说画的是什么，再一层层往下补。按这个顺序：
 
-1. **第一句：画风 + 人物 + 姿势 + 地点**，一句正常的话。
-   画风开头固定用：2.5D semi-realistic anime illustration
-   例：2.5D semi-realistic anime illustration of a young woman sitting cross-legged on a messy hotel bed.
-   例：2.5D semi-realistic anime illustration of a girl leaning against a classroom window, looking back over her shoulder.
-   例：2.5D semi-realistic anime illustration of a young man carrying a girl in a princess carry across a moonlit garden.
+1. **第一句：人物 + 姿势 + 地点**，一句正常的话。
+   例：A young woman sitting cross-legged on a messy hotel bed.
+   例：A girl leaning against a classroom window, looking back over her shoulder.
+   例：A tall young man carrying a girl in a princess carry across a moonlit garden.
    · 姿势有通用名字就直接写名字（sitting cross-legged, seiza, kneeling, lying on her side, hugging her knees, leaning against a wall, princess carry, piggyback ride, hug from behind, lap pillow, straddling…），按它最常见的样子画，不自创变体。
    · 视角只在需要时用一个自然说法带过：from a first-person POV、seen from the side、seen from behind、from a low angle。**不要**用「A full-body shot at eye level from the side of…」这种摄影术语开头，也不要同时写两种角度。
    · 第一句只写一个姿势，不要在同一句里叠加抓、摸、捏等其他动作。
@@ -53,7 +53,8 @@ tag（JSON 的 tag 键）：只给插件内部记录用，**不会发给模型**
 - **只写画面上看得见、而且值得画的东西。** 剧情里的小痕迹（伤口、结痂、指痕、泪痕、液体痕迹、污渍）不是这张图的重点就不写；要写也只写一处，写清在哪。
 - 不写看不见的东西：心理活动、剧情前因后果、声音、气味、「刚刚发生过什么」。
 - 不写否定句（no …, without …, not …），想排除的东西交给负面词。
-- 不写质量词（masterpiece, best quality…）、LoRA 名、触发词——工作流前缀已经有了。画风只用第一句那一个开头。
+- **不写画风**：画风由工作流的触发词、前缀和 LoRA 决定，nl 里不写任何画风/媒介词（anime illustration, 2.5D, semi-realistic, photorealistic, oil painting, digital art 等）。
+- 不写质量词（masterpiece, best quality…）、LoRA 名、触发词——工作流前缀已经有了。
 - 全部写成句子，不用 danbooru 式逗号短词堆砌。
 - 肤色默认不写；pale skin、white skin、fair skin 这类白皙描述不写（会白得发灰），只有明显晒黑/深肤色才写。
 - 画面里需要出现的文字（招牌、纸条、屏幕、对话气泡）用英文双引号原样写出内容，并说明在画面哪里；不需要文字就不提。
@@ -84,10 +85,10 @@ tag（JSON 的 tag 键）：只给插件内部记录用，**不会发给模型**
 4. 剧情事实（在场人物、动作、事件、关键道具）——严格以正文为准，不得编造；人数必须与正文一致。场景物件可以按场所合理补全（卧室有床和台灯、教室有课桌），但不编造影响剧情的道具。
 
 ━━ nl 示例（单人，约 170 词） ━━
-2.5D semi-realistic anime illustration of a young woman sitting cross-legged on a rumpled hotel bed at night, reading a folded letter in her hands. She has long black hair gathered into a loose bun held by a silver floral hairpin, a few strands falling beside her face, and half-lidded dark eyes with a faint, wistful smile. She wears a sheer white robe with pale-blue floral embroidery slipping off one shoulder over a silver satin slip dress, and white lace-topped thigh-high stockings. An open envelope and a crumpled silk scarf lie on the white sheets to her left. Behind the bed, the beige wall shows a large ink-wash mural of white lotus flowers between tall brown curtains; a brown leather armchair stands in the left background, and an ornate golden lantern glows on the nightstand at the right. Warm golden light from the lantern falls across her from the right, mixed with dim blue city light from the window.
+A young woman sitting cross-legged on a rumpled hotel bed at night, reading a folded letter in her hands. She has long black hair gathered into a loose bun held by a silver floral hairpin, a few strands falling beside her face, and half-lidded dark eyes with a faint, wistful smile. She wears a sheer white robe with pale-blue floral embroidery slipping off one shoulder over a silver satin slip dress, and white lace-topped thigh-high stockings. An open envelope and a crumpled silk scarf lie on the white sheets to her left. Behind the bed, the beige wall shows a large ink-wash mural of white lotus flowers between tall brown curtains; a brown leather armchair stands in the left background, and an ornate golden lantern glows on the nightstand at the right. Warm golden light from the lantern falls across her from the right, mixed with dim blue city light from the window.
 
 ━━ nl 示例（两人，日常） ━━
-2.5D semi-realistic anime illustration of a tall young man carrying a girl in a princess carry along a moonlit garden path, seen from the side. The young man has short messy black hair and wears a dark long coat; one arm supports her back and the other is under her knees. The girl has long silver hair falling over his arm and large red eyes, and she wraps both arms around his neck, looking up at him with flushed cheeks and a shy smile. She wears a light blue summer dress and white sandals. Stone lanterns line the path on the left, and blooming hydrangea bushes fill the right foreground. Cold moonlight from the upper right outlines both of them, with warm lantern light glowing below.
+A tall young man carrying a girl in a princess carry along a moonlit garden path, seen from the side. The young man has short messy black hair and wears a dark long coat; one arm supports her back and the other is under her knees. The girl has long silver hair falling over his arm and large red eyes, and she wraps both arms around his neck, looking up at him with flushed cheeks and a shy smile. She wears a light blue summer dress and white sandals. Stone lanterns line the path on the left, and blooming hydrangea bushes fill the right foreground. Cold moonlight from the upper right outlines both of them, with warm lantern light glowing below.
 
 ━━ 画幅方向（size 键） ━━
 默认 portrait：竖图最适合让人物撑满画面。躺姿、两人左右并排、或正文明确需要大场景时写 landscape。
@@ -111,7 +112,7 @@ export const MOSS_FACELESS_NOTE = `男性无脸（已开启）：
  */
 export const MOSS_THINKING_NOTE = `【MOSS 纯自然语言模式补充】
 本次使用 MOSS 纯自然语言风格：模型只会看到 nl。思维链里的槽位照常用英文短词定死取值，但落笔时按后端规范的顺序写成自然的英文段落：
-- 第一句：规范指定的画风开头 + 人物 + 姿势（有名字就写名字）+ 地点；不要用摄影术语开头。
+- 第一句：人物 + 姿势（有名字就写名字）+ 地点；不要用摄影术语开头，不写任何画风词。
 - 然后依次写外貌（She has… 完整句子）、表情、服装、手和道具、场景（带画面方位）、最后光线。
 - 剧情残留的小痕迹不是重点就删掉，细节优先写服装和场景里看得见的物件。tag 只写人数和角色名。
-- 自查时核对的是 nl：第一句是否以画风开头并写出姿势、有没有没谓语的半句、承重的手臂有没有被写去做别的事、全段是否只有一种角度和一套方位、外貌颜色是否和角色库一致。`;
+- 自查时核对的是 nl：第一句是否写出姿势、有没有混进画风词、有没有没谓语的半句、承重的手臂有没有被写去做别的事、全段是否只有一种角度和一套方位、外貌颜色是否和角色库一致。`;

@@ -255,8 +255,8 @@ export async function buildAutoTagMessages(
   if (nlOnly) {
     sampleImage.tag = '1girl, upper body, 小雪';
     sampleImage.nl = library
-      ? '2.5D semi-realistic anime illustration of a girl sitting at a classroom desk by the window, resting her chin on her hand. She has long silver hair and red eyes... (style opening + subject + pose + place first, then appearance as full She has… sentences using the library wording, outfit, hands and props, scene with frame positions, light last)'
-      : '2.5D semi-realistic anime illustration of a girl sitting at a classroom desk by the window, resting her chin on her hand. She has short black hair and blue eyes... (style opening + subject + pose + place first, then appearance as full She has… sentences, outfit, hands and props, scene with frame positions, light last)';
+      ? 'A girl sitting at a classroom desk by the window, resting her chin on her hand. She has long silver hair and red eyes... (subject + pose + place first, no style words, then appearance as full She has… sentences using the library wording, outfit, hands and props, scene with frame positions, light last)'
+      : 'A girl sitting at a classroom desk by the window, resting her chin on her hand. She has short black hair and blue eyes... (subject + pose + place first, no style words, then appearance as full She has… sentences, outfit, hands and props, scene with frame positions, light last)';
   }
   if (negativeOn) sampleImage.negative = 'extra people, duplicate character';
   sampleImage.size = profile.lockedSize ?? 'portrait';

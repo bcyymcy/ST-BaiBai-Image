@@ -94,7 +94,7 @@ export function buildFreeGenMessages(
   }
   if (profile.nlOnly) {
     sample.tag = '1girl, 1boy';
-    sample.nl = '2.5D semi-realistic anime illustration of a girl and a young man lying side by side on a bed in a dim bedroom, the girl resting her head on his chest. She has long black hair spread over the pillow... (style opening + people + pose + place first, then appearance as full She has… sentences, outfits, hands and props, scene with frame positions, light last)';
+    sample.nl = 'A girl and a young man lying side by side on a bed in a dim bedroom, the girl resting her head on his chest. She has long black hair spread over the pillow... (people + pose + place first, no style words, then appearance as full She has… sentences, outfits, hands and props, scene with frame positions, light last)';
   }
   if (negativeOn) sample.negative = 'standing, outdoors';
   sample.size = profile.lockedSize ?? 'portrait';
